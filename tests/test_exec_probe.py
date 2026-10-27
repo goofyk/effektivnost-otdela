@@ -6,20 +6,24 @@
 
 Что закреплено и почему:
 
-1. Режим запуска стоит в argv отдельно от шаблонной части (`DESIGNER /F <иб> /Out …`), поэтому
-   лестница меняет ровно одну переменную за шаг.
+1. Форма команды варианта — запись таблицы `VARIANT_COMMAND` (режим запуска + команда с
+   аргументами-метками) и `VARIANT_TAIL` (хвост авторизации). Ровно одна команда на вариант:
+   наблюдение дефекта `p1c.test.run.command()` показало, что подстановка всех 12 имён тестовой
+   группы разом (`CmdLine/...` как argv-аргументы + `/TESTCLIENT` вместе с `/TESTMANAGER`) не
+   является командой платформы.
 2. Каждый флаг варианта есть в измеренном списке имён платформы
    `p1c/src/p1c/data/test_cli_flags.json` (426 имён, платформа 8.3.27.1606). Имя, которого в
    замере нет, — наша выдумка: наблюдение с ним ничего не измеряет (так было с `/CmdLineParam`,
-   которого в замере нет).
+   которого в замере нет). Ключи вида `CmdLine/Имя` в argv не подставляются.
 3. Текст программы не оставляет подстановочной метки и обратных слешей: в BSL обратный слеш —
    escape-символ, и путь Windows в строке BSL читается иначе, чем записан.
 4. Кодирование файла программы — переменная наблюдения: `--sweep` меняет сначала её, и только
    потом режим и способ авторизации (наблюдение `runscript`: код 1 за 2.0 с при пустом выводе
    одинаково объясняется и «режим не принят», и «файл программы не прочитан»).
-5. Лестница — тройка (режим, текст программы, кодирование), и соседние шаги различаются ровно
+5. Лестница — тройка (вариант, текст программы, кодирование), и соседние шаги различаются ровно
    одной позицией: иначе прогон не отвечает ни на какой вопрос (так было у пары «режим +
-   кодирование» в одном шаге).
+   кодирование» в одном шаге). У лестниц команд (`AUTH_LADDER`, `TEST_LADDER`) дополнительно
+   проверяется, что сдвиг варианта затрагивает ровно одну часть формы команды.
 6. Контрольные прогоны (`CONTROLS`) существуют: наблюдение `runscript` неотличимо от «команда
    не принята», пока нет прогона на команде с известным исходом.
 """
@@ -60,16 +64,39 @@ class TestArgvShape(unittest.TestCase):
         self.assertEqual(head[4], "/Out")
         self.assertIn("/DisableStartupDialogs", head[:7])
 
-    def test_program_variants_carry_exactly_one_execution_mode(self):
-        """Ровно один из двух режимов исполнения, и он стоит рядом с файлом программы."""
+    def test_every_variant_carries_exactly_one_command(self):
+        """Один вариант — одно имя команды. Подстановка всех имён группы разом (как в
+        `p1c.test.run.command()`) — дефект, и в этой таблице он не воспроизводится."""
         for variant in exec_probe.VARIANTS:
-            if variant.startswith("load") or variant == "runscript-noarg":
-                continue  # контрольные прогоны: команда контроля и режим без аргумента
+            signature = exec_probe.variant_signature(variant)
+            self.assertIn(signature["mode"], ("DESIGNER", "ENTERPRISE"), variant)
+            self.assertLessEqual(len(signature["names"]), 1, f"{variant}: больше одной команды")
+
+    def test_variants_without_a_command_are_named_explicitly(self):
+        """Пустая команда допустима только для названных вариантов (режим без команды)."""
+        empty = [variant for variant in exec_probe.VARIANTS
+                 if not exec_probe.variant_signature(variant)["names"]]
+        self.assertEqual(sorted(empty), sorted(exec_probe.NO_COMMAND_VARIANTS))
+
+    def test_launch_mode_comes_from_the_table(self):
+        for variant in exec_probe.VARIANTS:
+            self.assertEqual(argv(variant)[1], exec_probe.VARIANT_COMMAND[variant][0], variant)
+
+    def test_script_file_follows_its_command(self):
+        """Файл программы стоит сразу за именем команды, которое его читает."""
+        for variant in exec_probe.VARIANTS:
+            if not exec_probe.needs_script(variant):
+                continue
             flags = argv(variant)
-            modes = [item for item in flags if item in ("/RunScript", "/EXECUTE")]
-            self.assertEqual(len(modes), 1, variant)
-            script_index = flags.index(modes[0])
-            self.assertEqual(flags[script_index + 1], str(SCRIPT), variant)
+            name = exec_probe.variant_signature(variant)["names"][0]
+            self.assertEqual(flags[flags.index(name) + 1], str(SCRIPT), variant)
+
+    def test_variants_without_a_script_do_not_receive_it(self):
+        """`-TestOnly`, `/AllowExecuteScheduledJobs` и контроли файл программы не читают."""
+        for variant in exec_probe.VARIANTS:
+            if exec_probe.needs_script(variant):
+                continue
+            self.assertNotIn(str(SCRIPT), argv(variant), variant)
 
     def test_runscript_without_argument_has_no_script(self):
         """`runscript-noarg` — контроль «режим принят, но аргумента нет»: файл не подставляется."""
@@ -123,9 +150,15 @@ class TestFlagsAreMeasured(unittest.TestCase):
         self.assertIn("/RunScript", self.measured)
 
     def test_credentials_use_measured_names(self):
-        flags = argv("runscript-credentials")
-        self.assertIn("-User=1CTest", flags)
-        self.assertIn("-PUser=1CTest", flags)
+        """Пара `-User`/`-Pwd` (оба имени есть в замере) подставлена одинаково всем вариант
+        авторизации; `-PUser`/`-PPwd` не подставляются: в таблице имён они стоят в группе
+        `PUser PPwd PSrv PPort NoProxy Proxy` — доступ к серверу приложений и прокси, а не к ИБ."""
+        for variant in ("runscript-credentials", "load-credentials"):
+            flags = argv(variant)
+            self.assertIn("-User=1CTest", flags, variant)
+            self.assertIn("-Pwd=1CTest", flags, variant)
+            for server_only in ("-PUser", "-PPwd", "-PSrv", "-PPort"):
+                self.assertNotIn(server_only, [item.split("=", 1)[0] for item in flags], variant)
         self.assertIn("CmdLine/UserName", self.keys)
         self.assertIn("CmdLine/UserPassword", self.keys)
 
@@ -214,10 +247,16 @@ class TestPrepareScript(unittest.TestCase):
 
 
 class TestLadders(unittest.TestCase):
+    LADDERS = (("SWEEP", exec_probe.SWEEP),
+               ("PROGRAM_LADDER", exec_probe.PROGRAM_LADDER),
+               ("CONTROLS", exec_probe.CONTROLS),
+               ("NEGATIVE_LADDER", exec_probe.NEGATIVE_LADDER),
+               ("AUTH_LADDER", exec_probe.AUTH_LADDER),
+               ("TEST_LADDER", exec_probe.TEST_LADDER))
+
     def test_every_step_is_a_known_triple(self):
         known = set(exec_probe.VARIANTS) | set(exec_probe.NEGATIVE_CONTROLS)
-        for ladder in (exec_probe.SWEEP, exec_probe.PROGRAM_LADDER, exec_probe.CONTROLS,
-                       exec_probe.NEGATIVE_LADDER):
+        for _name, ladder in self.LADDERS:
             for step in ladder:
                 variant, kind, encoding = step
                 self.assertIn(variant, known)
@@ -226,12 +265,26 @@ class TestLadders(unittest.TestCase):
 
     def test_consecutive_steps_change_exactly_one_variable(self):
         """Лестница наблюдения: соседние шаги различаются одной позицией тройки."""
-        for name, ladder in (("SWEEP", exec_probe.SWEEP),
-                             ("PROGRAM_LADDER", exec_probe.PROGRAM_LADDER)):
+        for name, ladder in self.LADDERS:
             for previous, current in zip(ladder, ladder[1:]):
                 changed = [index for index in range(3) if previous[index] != current[index]]
                 self.assertEqual(len(changed), 1,
                                  f"{name}: {previous} -> {current} меняет {changed}")
+
+    def test_reported_diffs_agree_with_the_ladder(self):
+        """Дисциплина лестницы считается по лестнице и попадает в отчёт: одиночная позиция
+        тройки на шаг и одиночная часть формы команды (для лестниц команд)."""
+        for name, ladder in self.LADDERS:
+            diffs = exec_probe.ladder_step_diffs(ladder)
+            self.assertEqual(len(diffs), len(ladder), name)
+            self.assertTrue(all(step["single_variable"] for step in diffs), name)
+            self.assertTrue(all(step["single_command_part"] for step in diffs), name)
+            # Первая запись — эталон сравнения, сравнения с предыдущим шагом у неё нет.
+            self.assertEqual(diffs[0]["from"], "", name)
+            self.assertEqual(diffs[0]["changed_triple"], [], name)
+            for step, (previous, current) in zip(diffs[1:], zip(ladder, ladder[1:])):
+                self.assertEqual((step["from"], step["to"]), (previous[0], current[0]), name)
+                self.assertEqual(len(step["changed_triple"]), 1, name)
 
     def test_sweep_changes_encoding_before_mode(self):
         """Первые три шага — одно имя режима при разных кодированиях."""
@@ -246,10 +299,21 @@ class TestLadders(unittest.TestCase):
         self.assertEqual({encoding for _, _, encoding in exec_probe.PROGRAM_LADDER}, {"cp1251"})
 
     def test_controls_are_command_with_a_known_outcome(self):
-        """Контроль — известные команды: `/LoadConfigFromFiles` (подтверждён гейтом) и `/RunScript`
-        без аргумента."""
+        """Контроль — известные команды (`/LoadConfigFromFiles`: подтверждён гейтом код 0, без
+        аргумента, с битым каталогом) рядом со спорной `/RunScript` (без аргумента и с файлом).
+        Порядок фиксируется: соседние шаги различаются одной частью формы команды, поэтому исход
+        спорной команды нельзя приписать сразу двум изменениям."""
         self.assertEqual([variant for variant, _, _ in exec_probe.CONTROLS],
-                         ["load-ok", "load-noarg", "load-baddir", "runscript-noarg"])
+                         ["runscript", "runscript-noarg", "load-noarg", "load-ok", "load-baddir"])
+        commands = [exec_probe.variant_signature(variant)["names"][0]
+                    for variant, _, _ in exec_probe.CONTROLS]
+        self.assertEqual(commands,
+                         ["/RunScript", "/RunScript", "/LoadConfigFromFiles",
+                          "/LoadConfigFromFiles", "/LoadConfigFromFiles"])
+        self.assertEqual([exec_probe.variant_signature(variant)["args"]
+                          for variant, _, _ in exec_probe.CONTROLS],
+                         [(exec_probe.SCRIPT_ARG,), (), (), (exec_probe.CFG_ARG,),
+                          (exec_probe.BADDIR_ARG,)])
 
     def test_encoding_labels_are_distinct(self):
         labels = list(exec_probe.ENCODINGS.values())
@@ -269,6 +333,65 @@ class TestLadders(unittest.TestCase):
         text = exec_probe.program_text(exec_probe.PROGRAMS["marker"], pathlib.Path("m.txt"))
         self.assertNotEqual(text.encode("cp1251"), text.encode("utf-8"))
         self.assertNotEqual(text.encode("utf-8-sig"), text.encode("utf-8"))
+
+
+class TestCommandLadders(unittest.TestCase):
+    """Лестницы команд (`--auth`, `--test`): меняется ровно одна часть формы команды."""
+
+    def test_auth_ladder_keeps_the_working_command(self):
+        """Команда остаётся заведомо рабочей (`/LoadConfigFromFiles` с каталогом конфигурации)."""
+        for variant, _kind, _encoding in exec_probe.AUTH_LADDER:
+            signature = exec_probe.variant_signature(variant)
+            self.assertEqual(signature["mode"], "DESIGNER", variant)
+            self.assertEqual(signature["names"], ("/LoadConfigFromFiles",), variant)
+            self.assertEqual(signature["args"], (exec_probe.CFG_ARG,), variant)
+
+    def test_auth_ladder_starts_from_the_reference_and_changes_only_the_tail(self):
+        self.assertEqual(exec_probe.AUTH_LADDER[0][0], "load-ok")
+        diffs = exec_probe.ladder_step_diffs(exec_probe.AUTH_LADDER)
+        for step in diffs[1:]:
+            self.assertEqual(step["changed_command"], ["tail"],
+                             f"{step['from']} -> {step['to']}")
+
+    def test_auth_ladder_covers_the_measured_authorization_names(self):
+        tails = [exec_probe.variant_signature(variant)["tail"]
+                 for variant, _kind, _encoding in exec_probe.AUTH_LADDER]
+        flat = {item.split("=", 1)[0] for tail in tails for item in tail}
+        self.assertEqual(flat, {"/authoff", "-AllUsers", "-CurrentUser", "-User", "-Pwd"})
+        self.assertEqual(tails[0], (), "эталонный шаг идёт без хвоста авторизации")
+
+    def test_test_ladder_opens_with_the_launch_mode_pair(self):
+        """Первый шаг сравнивает `DESIGNER` и `ENTERPRISE` как единственную часть команды."""
+        variants = [variant for variant, _kind, _encoding in exec_probe.TEST_LADDER]
+        self.assertEqual(variants[:3], ["runscript", "enterprise-runscript", "runscript"])
+        diffs = exec_probe.ladder_step_diffs(exec_probe.TEST_LADDER)
+        self.assertEqual(diffs[1]["changed_command"], ["mode"])
+        self.assertEqual(diffs[2]["changed_command"], ["mode"])
+
+    def test_test_ladder_carries_the_measured_test_group_names(self):
+        """Имена группы `test` замера, которые подставляют в argv как флаги."""
+        names = {name for variant, _kind, _encoding in exec_probe.TEST_LADDER
+                 for name in exec_probe.variant_signature(variant)["names"]}
+        for expected in ("/TESTCLIENT", "/TESTMANAGER", "-testFile", "-testOut", "-TestOnly"):
+            self.assertIn(expected, names)
+        self.assertIn("/RunScript", names, "лестница обязана включать базовую сигнатуру")
+
+    def test_command_keys_never_enter_argv(self):
+        """`CmdLine/Имя` — ключи конфигурации командной строки, а не argv-аргументы.
+        Наблюдение `p1c.test.run.command()` показало: 10 таких ключей в argv дают код 1."""
+        for variant in tuple(exec_probe.VARIANT_COMMAND) + tuple(exec_probe.NEGATIVE_CONTROLS):
+            for item in exec_probe.variant_argv(variant, BIN, IB, SCRIPT,
+                                                pathlib.Path("w/o.txt"), pathlib.Path("w/m.txt"),
+                                                CFG, pathlib.Path("work")):
+                self.assertFalse(str(item).startswith("CmdLine/"), variant)
+
+    def test_main_refuses_auth_ladder_without_configuration_directory(self):
+        """Как и `--controls`: без каталога конфигурации эталонной команды нет.
+        (`--test` не проверяют: его лестница не содержит команды загрузки, и отказ тут же
+        означал бы, что тест запустил бы платформу.)"""
+        missing = ROOT / "tests" / "_no-such-local-paths.json"
+        self.assertEqual(exec_probe.main(["--local", str(missing), "--work", "work",
+                                          "--bin", BIN, "--ib", IB, "--auth"]), 2)
 
 
 class TestNegativeControls(unittest.TestCase):
@@ -305,16 +428,21 @@ class TestNegativeControls(unittest.TestCase):
     def test_negative_ladder_compares_against_runscript_in_one_measurement(self):
         """`runscript` и нераспознанные имена прогоняются одним замером, одной переменой за шаг."""
         self.assertEqual([variant for variant, _, _ in exec_probe.NEGATIVE_LADDER],
-                         ["runscript"] + list(exec_probe.NEGATIVE_CONTROLS))
+                         ["runscript", "runscript-noarg"] + list(exec_probe.NEGATIVE_CONTROLS))
         for previous, current in zip(exec_probe.NEGATIVE_LADDER,
                                      exec_probe.NEGATIVE_LADDER[1:]):
             changed = [index for index in range(3) if previous[index] != current[index]]
             self.assertEqual(len(changed), 1, f"{previous} -> {current}")
+        for step in exec_probe.ladder_step_diffs(exec_probe.NEGATIVE_LADDER)[1:]:
+            self.assertEqual(len(step["changed_command"]), 1,
+                             f"{step['from']} -> {step['to']}: {step['changed_command']}")
 
     def test_negative_ladder_writes_no_program_file(self):
-        """Команда с нераспознанным именем не читает файл программы: лишний файл — шум."""
-        for variant, _, _ in exec_probe.NEGATIVE_LADDER[1:]:
-            self.assertIn(variant, exec_probe.NEGATIVE_CONTROLS)
+        """Ни один шаг после базового не читает файл программы: лишний файл — шум."""
+        for variant, _kind, _encoding in exec_probe.NEGATIVE_LADDER[1:]:
+            self.assertFalse(exec_probe.needs_script(variant), variant)
+        self.assertTrue(set(variant for variant, _, _ in exec_probe.NEGATIVE_LADDER[2:])
+                        <= set(exec_probe.NEGATIVE_CONTROLS))
 
 
 class TestOutcomeKey(unittest.TestCase):
@@ -353,10 +481,20 @@ class TestMainGuards(unittest.TestCase):
                                          "--bin", BIN, "--ib", IB, "--controls"]), 2)
 
     def test_ladders_are_distinct_from_the_variant_list(self):
-        """`--all` — варианты при одном кодировании; лестницы — свои наборы шагов."""
+        """`--all` — варианты при одном кодировании; лестницы — свои наборы шагов.
+        Контроль загрузки (`load-*`) входит только в `CONTROLS` и `AUTH_LADDER`: лестницы
+        исполнения BSL (Sweep, тексты программ, отрицательная, тестовая) его не содержат."""
         self.assertNotEqual(exec_probe.SWEEP, exec_probe.PROGRAM_LADDER)
-        self.assertTrue(all(variant not in {v for v, _, _ in exec_probe.CONTROLS}
-                            for variant, _, _ in exec_probe.SWEEP))
+        load_variants = {variant for variant, _, _ in exec_probe.CONTROLS
+                         if variant.startswith("load")}
+        self.assertTrue(load_variants)
+        for name, ladder in (("SWEEP", exec_probe.SWEEP),
+                             ("PROGRAM_LADDER", exec_probe.PROGRAM_LADDER),
+                             ("NEGATIVE_LADDER", exec_probe.NEGATIVE_LADDER),
+                             ("TEST_LADDER", exec_probe.TEST_LADDER)):
+            self.assertFalse({variant for variant, _, _ in ladder} & load_variants, name)
+        self.assertTrue(all(variant.startswith("load") for variant, _, _ in exec_probe.AUTH_LADDER),
+                        "лестница авторизации идёт на рабочей команде загрузки")
 
 
 class TestRunPassesPathsToArgv(unittest.TestCase):
