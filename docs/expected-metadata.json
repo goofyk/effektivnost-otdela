@@ -1,7 +1,7 @@
 {
-  "comment": "Эталон гейта (scripts/gate.py): числа задаёт спецификация до сборки итерации, а не инструмент. Согласованность двух инструментов ничего не доказывает: платформа канонизирует свойства, а читатель p1c.load не читает папки Roles, Subsystems, Languages, SessionParameters и содержимое Templates. Имена видов — те же, что у независимого счётчика scripts/layout.py.",
+  "comment": "Эталон гейта (scripts/gate.py): числа задаёт спецификация ДО сборки итерации, а не инструмент. Согласованность двух инструментов ничего не доказывает: платформа канонизирует свойства, а читатель p1c.load не читает папки Roles, Subsystems, Languages, SessionParameters и содержимое Templates. Имена видов — те же, что у независимого счётчика scripts/layout.py.",
   "iteration": 1,
-  "iteration_comment": "тонкий срез: по одному представителю каждого дорогого по формату вида — конфигурация, язык, подсистема, перечисление, константа, иерархический справочник с табличной секцией, тройка файлов одной формы, документ, регистр сведений, регистр накопления, отчёт с минимальным макетом СКД, общий модуль, роль",
+  "iteration_comment": "тонкий срез: по одному представителю каждого дорогого по формату вида — конфигурация, язык, подсистема с Content, перечисление, константа, иерархический справочник с табличной секцией и тройкой файлов одной управляемой формы, документ с движением в регистры, периодический регистр сведений с модулем менеджера, регистр накопления, общий модуль, отчёт с макетом схемы компоновки данных, роль с правами",
   "expected": {
     "language": 1,
     "subsystem": 1,
@@ -13,14 +13,18 @@
     "accumulation_register": 1,
     "common_module": 1,
     "report": 1,
-    "role": 1,
+    "role": 2,
     "form_descriptor": 1,
     "form_data": 1,
     "form_module": 1,
     "report_template": 1,
     "report_template_data": 1,
-    "role_rights": 1,
-    "bsl_module": 4
+    "role_rights": 2,
+    "object_module": 4,
+    "bsl_module": 5,
+    "files": 24
   },
-  "bsl_module_comment": "модуль формы + модуль объекта документа + модуль регистратора (RecordSetModule) + общий модуль"
+  "object_module_comment": "Catalogs/Сотрудники/Ext/ObjectModule.bsl + Documents/ФактРаботы/Ext/ObjectModule.bsl + InformationRegisters/ПланЗагрузки/Ext/ManagerModule.bsl + CommonModules/РасчётПоказателей/Ext/Module.bsl",
+  "bsl_module_comment": "object_module (4) + модуль формы Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form/Module.bsl = 5 файлов BSL",
+  "files_comment": "ConfigDumpInfo.xml в исходнике не пишется: это журнал версий объектов, он появляется только в выгрузке платформы"
 }

@@ -43,6 +43,28 @@ CHECK_KEYS = ("-Server", "-ThinClient", "-WebClient", "-ExternalConnection",
 DEFAULT_TIMEOUT = 300
 
 
+IB_MARKERS = (".8cd", ".8dh", ".1cd", ".1cl")
+
+
+def ib_exists(ib: str) -> bool:
+    """Файловая база создана: в каталоге есть маркеры файловой базы.
+
+    Наблюдение 8.3.27.1606: `CREATEINFOBASE File=…` даёт каталог с `1Cv8.1CD` (и `1Cv8.1CL.cfl`),
+    а не с «классическими» `1Cv8.8cd`. Отличие важно: без базы загрузка сообщает
+    «Информационная база не обнаружена!» с кодом 1 — неотличимо от битой конфигурации.
+    """
+    if not ib:
+        return False
+    base = pathlib.Path(ib)
+    if not base.is_dir():
+        return False
+    for entry in base.iterdir():
+        name = entry.name.lower()
+        if name.startswith("1cv8") and entry.suffix.lower() in IB_MARKERS and entry.is_file():
+            return True
+    return False
+
+
 def refusal(step: str, opts: dict) -> str:
     """Причина, по которой шаг не выполняется. Пустая строка — запуск разрешён."""
     if step not in STEPS:

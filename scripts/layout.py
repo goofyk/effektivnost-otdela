@@ -82,9 +82,14 @@ def _object_files(base: pathlib.Path, folder: pathlib.Path) -> list[pathlib.Path
     return found
 
 
-def layout_counts(cfg_dir) -> dict:
-    """Числа по видам метаданных и по парам файлов, независимые от инструментов p1c."""
+def layout_counts(cfg_dir, ignore: tuple = ()) -> dict:
+    """Числа по видам метаданных и по парам файлов, независимые от инструментов p1c.
+
+    `ignore` — относительные пути файлов, которые добавляет сама платформа (выгрузка:
+    `ConfigDumpInfo.xml`), иначе выгрузка всегда оказывается на файл «длиннее» исходника.
+    """
     base = pathlib.Path(cfg_dir)
+    skipped = set(ignore)
     counts: dict[str, int] = {}
     for folder, kind in KIND_FOLDERS.items():
         directory = base / folder
@@ -113,7 +118,8 @@ def layout_counts(cfg_dir) -> dict:
     counts["role_rights"] = len(role_rights)
     counts["object_module"] = len(object_modules)
     counts["bsl_module"] = len(bsl)
-    counts["files"] = sum(1 for p in base.rglob("*") if p.is_file())
+    counts["files"] = sum(1 for p in base.rglob("*")
+                          if p.is_file() and p.relative_to(base).as_posix() not in skipped)
     return {kind: count for kind, count in sorted(counts.items()) if count}
 
 

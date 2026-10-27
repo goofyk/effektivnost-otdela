@@ -9,6 +9,7 @@ import contextlib
 import io
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 import types
@@ -47,6 +48,28 @@ class IbLoopTest(unittest.TestCase):
         for key in ("-Server", "-ThinClient", "-WebClient", "-ExternalConnection",
                     "-ThickClientOrdinaryApplication"):
             self.assertIn(key, command)
+
+    def test_ib_exists_reads_the_file_base_markers(self):
+        """Признак файловой базы — маркеры каталога. По ним решаем, нужен ли create.
+
+        Наблюдение 8.3.27: база, созданная CREATEINFOBASE File=…, содержит 1Cv8.1CD (и
+        1Cv8.1CL.cfl), а не «классические» 1Cv8.8cd. Без базы /LoadConfigFromFiles даёт
+        «Информационная база не обнаружена!» и код 1 — то же самое, что дал бы битый каталог
+        конфигурации, поэтому различать «базы нет» и «конфигурация не читается» надо до запуска.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(ib_loop.ib_exists(tmp))
+            (pathlib.Path(tmp) / "1Cv8.8cd").write_bytes(b"x")
+            self.assertTrue(ib_loop.ib_exists(tmp))
+        with tempfile.TemporaryDirectory() as tmp:
+            (pathlib.Path(tmp) / "1Cv8.1CD").write_bytes(b"x")
+            self.assertTrue(ib_loop.ib_exists(tmp), "наблюдённый маркер 8.3.27")
+        self.assertFalse(ib_loop.ib_exists(""))
+
+    def test_create_command_is_the_observed_shape(self):
+        command = ib_loop.build_command("create", {"bin": "BIN", "ib": "IB", "out": "OUT"})
+        self.assertEqual(command, ["BIN", "CREATEINFOBASE", "File=IB", "/Out", "OUT",
+                                   "/DisableStartupDialogs"])
 
 
 class CountsTest(unittest.TestCase):
@@ -140,6 +163,108 @@ class PathsTest(unittest.TestCase):
 
 
 class GateTest(unittest.TestCase):
+    def test_missing_ib_adds_the_create_step(self):
+        """Цикл без базы начинался бы с загрузки и дал бы «Информационная база не обнаружена!»
+        — тот же код 1, что и битый каталог конфигурации. Различать эти два случая должен
+        контур, а не человек, читающий вывод."""
+        self.assertEqual(gate.loop_steps(ib_ready=False), ("create", "load", "check", "dump"))
+        self.assertEqual(gate.loop_steps(ib_ready=True), ("load", "check", "dump"))
+
+    def test_each_step_writes_its_own_output_file(self):
+        """Наблюдение gate-03: один файл вывода на весь цикл — диагностика загрузки исчезает,
+        потому что её перезаписывает следующий шаг (у загрузки было 0 байт, и в отчёте остались
+        только строки /CheckModules)."""
+        outs = [gate.loop_out_path("OUT/out.txt", step) for step in gate.loop_steps(True)]
+        self.assertEqual(len(set(outs)), len(outs), outs)
+        for step, path in zip(gate.loop_steps(True), outs):
+            self.assertIn(step, pathlib.Path(path).name)
+
+    def test_diagnostics_keep_which_step_said_what(self):
+        report = {"diagnostics": [], "diagnostics_by_step": {}}
+        gate.record_diagnostics(report, "load", ["Отсутствует внутренняя информация"])
+        gate.record_diagnostics(report, "check", ["Синтаксических ошибок не обнаружено!"])
+        self.assertEqual(report["diagnostics_by_step"]["load"],
+                         ["Отсутствует внутренняя информация"])
+        self.assertEqual(report["diagnostics"],
+                         ["Отсутствует внутренняя информация",
+                          "Синтаксических ошибок не обнаружено!"])
+
+    def test_timeout_is_named_as_a_step_problem_not_as_a_empty_dump(self):
+        """gate-03: /LoadConfigFromFiles не завершился за 600 с и не вывел ни байта. Отчёт обязан
+        назвать этот шаг, а не прятать его за «составом выгрузки»."""
+        timed_out = gate.step_problem("load", {"code": 1, "timed_out": True, "seconds": 600,
+                                               "bytes": 0})
+        self.assertIn("load", timed_out)
+        self.assertIn("ожидани", timed_out)
+        self.assertIn("600", timed_out)
+        self.assertIn("0 байт", timed_out)
+        self.assertEqual(gate.step_problem("check", {"code": 0, "timed_out": False,
+                                                     "seconds": 2, "bytes": 73}), "")
+        self.assertIn("код 1", gate.step_problem("dump", {"code": 1, "timed_out": False,
+                                                          "seconds": 2, "bytes": 0}))
+
+    def test_load_timeout_stops_the_cycle_but_a_finished_load_does_not(self):
+        """После убитого по ожиданию процесса база недописана: /CheckModules на такой базе в
+        gate-03 дал код 0 и «Синтаксических ошибок не обнаружено!», то есть показания дальнейших
+        шагов нельзя читать как доказательство. Отказ загрузки, который платформа договорала до
+        конца (ненулевой код, вывод есть), наоборот, обязан дойти до выгрузки: она показывает,
+        что именно осталось в базе."""
+        self.assertFalse(gate.cycle_continues("load", {"code": 1, "timed_out": True}))
+        self.assertFalse(gate.cycle_continues("create", {"code": 1, "timed_out": False}))
+        self.assertTrue(gate.cycle_continues("load", {"code": 1, "timed_out": False}))
+        self.assertTrue(gate.cycle_continues("load", {"code": 0, "timed_out": False}))
+        self.assertTrue(gate.cycle_continues("check", {"code": 1, "timed_out": False}))
+        self.assertTrue(gate.cycle_continues("dump", {"code": 0, "timed_out": False}))
+
+    def test_success_lines_of_the_platform_are_not_findings(self):
+        """Наблюдённые строки успешного вывода (create, check). Если считать их находками,
+        зелёной итерации не будет никогда: /CheckModules печатает свою строку всегда."""
+        lines = ['Создание информационной базы ("File=...") успешно завершено',
+                 "Синтаксических ошибок не обнаружено!", "", "   "]
+        self.assertEqual(gate.diagnostic_findings(lines), [])
+
+    def test_platform_error_lines_are_findings(self):
+        """Тексты отказов, полученные в gate-01 и gate-02, обязаны оставаться находками."""
+        lines = ["Ошибка XDTO в файле - ЭффективностьОтдела.xml, при чтении свойства: Content",
+                 "Отсутствует внутренняя информация (узел InternalInfo) для объекта Report.",
+                 "Неверное значение перечисления - Turnover",
+                 "Информационная база не обнаружена!",
+                 "Синтаксических ошибок не обнаружено!"]
+        findings = gate.diagnostic_findings(lines)
+        self.assertEqual(len(findings), 4, findings)
+        self.assertIn("Информационная база не обнаружена!", findings)
+
+    def test_gate_refuses_a_non_canonical_rights_block_before_touching_the_platform(self):
+        """Найденная причина зависания (права на перечисление) обязана находиться статическим шагом
+        гейта: цикл платформы на такой конфигурации только отнимает время и молчит."""
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = pathlib.Path(tmp) / "cfg"
+            shutil.copytree(ROOT / "cfg" / "ЭффективностьОтдела", copy)
+            path = copy / "Roles" / "СотрудникОтдела" / "Ext" / "Rights.xml"
+            text = path.read_bytes().decode("utf-8-sig").replace("\r\n", "\n")
+            marker = "\t<object>\n\t\t<name>Constant.НормаЧасовВМесяц</name>"
+            self.assertIn(marker, text)
+            injected = ("\t<object>\n\t\t<name>Enum.ГрейдыСпециалистов</name>\n\t\t<right>\n"
+                        "\t\t\t<name>Read</name>\n\t\t\t<value>true</value>\n\t\t</right>\n"
+                        "\t</object>\n" + marker)
+            path.write_bytes(injected.replace("\n", "\r\n").encode("utf-8"))
+            code, report = gate.run(str(copy), str(pathlib.Path(tmp) / "gate.json"),
+                                    {"cfg": str(copy), "local": str(pathlib.Path(tmp) / "нет.json")})
+            self.assertEqual(code, 1, report.get("reason"))
+            self.assertIn("Enum", report["reason"])
+            self.assertEqual(report["steps"], [], "платформу за этот отказ запускать нельзя")
+
+    def test_the_clean_configuration_passes_the_rights_stage(self):
+        """Права исправленной конфигурации чисты по измеренному канону; без `--bin` гейт обязан
+        остановиться уже после этого шага, а не до него."""
+        with tempfile.TemporaryDirectory() as tmp:
+            source = str(ROOT / "cfg" / "ЭффективностьОтдела")
+            code, report = gate.run(source, str(pathlib.Path(tmp) / "gate.json"),
+                                    {"cfg": source, "local": str(pathlib.Path(tmp) / "нет.json")})
+            self.assertEqual(report["rights"]["code"], 0, report["rights"]["problems"])
+            self.assertEqual(code, 2, report.get("reason"))
+            self.assertIn("платформ", report["reason"])
+
     def test_refuses_without_cfg(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, report = gate.run(str(pathlib.Path(tmp) / "нет-такого-каталога"),

@@ -23,9 +23,17 @@
 этого даёт код 0 на пустой базе, а `/DumpConfigToFiles` не затирает прежний дамп (наблюдение
 B2: из 239 файлов свежими оказались 3, `Configuration.xml` с `Name=Конфигурация`).
 
-Коды выхода: 0 — расхождений и диагностик нет; 1 — diagnostics платформы, расхождение чисел
-или нарушенная парность файлов; 2 — проверить нельзя (нет каталога конфигурации, нет файла
+Коды выхода: 0 — расхождений и диагностических находок нет; 1 — находки платформы, расхождение
+чисел или нарушенная парность файлов; 2 — проверить нельзя (нет каталога конфигурации, нет файла
 ожидаемых чисел, нет файла платформы или базы).
+
+Два правила цикла, выведенные из наблюдения gate-03 (загрузка не завершилась за 600 с, вывод 0
+байт): каждый шаг пишет в свой файл вывода (`loop_out_path`), потому что при общем файле пустой
+вывод загрузки перезаписывается следующим шагом; и цикл прерывается на шаге, убитом по ожиданию
+(`cycle_continues`), потому что показания следующих шагов на недописанной базе читаются как
+доказательство, которого нет. Строки успешного вывода платформы («… успешно завершено»,
+«Синтаксических ошибок не обнаружено!») находками не считаются (`diagnostic_findings`): иначе
+зелёной итерации не бывает никогда.
 """
 from __future__ import annotations
 
@@ -40,9 +48,16 @@ import counts                                                    # noqa: E402
 import ib_loop                                                   # noqa: E402
 import layout                                                    # noqa: E402
 import paths                                                     # noqa: E402
+import rights                                                    # noqa: E402
 
 EMPTY_CONFIGURATION_NAME = "Конфигурация"
 DEFAULT_EXPECTED = ROOT / "docs" / "expected-metadata.json"
+
+# Файлы, которые платформа добавляет в выгрузку сама. Замер: `ConfigDumpInfo.xml` есть в каждом из
+# шести канонических корпусов (`corpora_*`) и появляется в нашей выгрузке (`gate-04`:
+# `only_dump: ["ConfigDumpInfo.xml"]`). В исходнике его быть не может, поэтому он не должен
+# считаться ни лишним файлом, ни лишней метаданной.
+PLATFORM_ADDED_FILES = ("ConfigDumpInfo.xml",)
 
 
 def check_metadata(cfg_dir, expected_path) -> tuple:
@@ -109,12 +124,20 @@ def empty_dump_detected(source: dict, dumped: dict, dump_name: str = "",
     return bool(dump_name) and bool(source_name) and dump_name != source_name
 
 
-def file_diff(cfg_dir, dump_dir) -> dict:
+def file_diff(cfg_dir, dump_dir, added: tuple = PLATFORM_ADDED_FILES) -> dict:
     """Пофайловое сравнение источника и выгрузки после нормализации BOM и переводов строк.
 
     Делается здесь, а не `p1c-diff`: наблюдение репозитория показывает, что `p1c-diff`
     сравнивает модели метаданных, а не файлы, и папок `Roles`/`Subsystems`/`Languages`/
     `Templates` в этих моделях нет.
+
+    Два наблюдения real-прогона gate-04 (`probe/dump_vs_source.py`), которые определяют контракт:
+
+    - 8 из 19 «отличающихся» файлов отличались только завершающим переводом строки (мы его пишем,
+      платформа нет); поэтому завершающие переводы строки в конце файла нормализуются;
+    - `ConfigDumpInfo.xml` в выгрузке есть, а в исходнике его быть не может: это файл платформы
+      (он есть во всех канонических выгрузках корпусов), и он называется отдельно — иначе
+      «выгрузка длиннее исходника» стало бы вечным отказом.
     """
     def listing(root: pathlib.Path) -> dict:
         return {p.relative_to(root).as_posix(): p for p in root.rglob("*") if p.is_file()}
@@ -123,18 +146,98 @@ def file_diff(cfg_dir, dump_dir) -> dict:
         data = path.read_bytes()
         if data[:3] == b"\xef\xbb\xbf":
             data = data[3:]
-        return data.replace(b"\r\n", b"\n")
+        return data.replace(b"\r\n", b"\n").rstrip(b"\r\n")
 
     a, b = listing(pathlib.Path(cfg_dir)), listing(pathlib.Path(dump_dir))
-    same, differ, only_source, only_dump = [], [], [], []
+    same, differ, only_source, only_dump, platform_added = [], [], [], [], []
     for rel in sorted(set(a) | set(b)):
         if rel in a and rel in b:
             (same if normalized(a[rel]) == normalized(b[rel]) else differ).append(rel)
         elif rel in a:
             only_source.append(rel)
+        elif rel in added:
+            platform_added.append(rel)
         else:
             only_dump.append(rel)
-    return {"same": len(same), "differ": differ, "only_source": only_source, "only_dump": only_dump}
+    return {"same": same, "differ": differ, "only_source": only_source, "only_dump": only_dump,
+            "platform_added": platform_added}
+
+
+def loop_steps(ib_ready: bool) -> tuple:
+    """Порядок шагов цикла платформы.
+
+    Базу создаёт контур, если её нет: без базы загрузка сообщает «Информационная база не
+    обнаружена!» с кодом 1 — неотличимо от битой конфигурации. Повторно создавать существующую
+    базу нельзя: CREATEINFOBASE на готовой базе даёт ненулевой код.
+    """
+    return ("load", "check", "dump") if ib_ready else ("create", "load", "check", "dump")
+
+
+def loop_out_path(base_out: str, step: str) -> str:
+    """Файл вывода каждого шага — отдельный.
+
+    Наблюдение gate-03: на общий файл вывода шагов загрузка (0 байт) была перезаписана
+    следующим шагом, и в отчёте остались только строки /CheckModules: «Синтаксических ошибок не
+    обнаружено!» при том, что конфигурация не была загружена.
+    """
+    path = pathlib.Path(base_out)
+    return str(path.parent / (path.stem + "-" + step + path.suffix))
+
+
+def record_diagnostics(report: dict, step: str, lines: list) -> None:
+    """Диагностику хранят по шагам: плоский список неудобен, когда шаг молчит или его вывод пуст."""
+    report.setdefault("diagnostics_by_step", {})[step] = list(lines)
+    report["diagnostics"] = report.setdefault("diagnostics", []) + list(lines)
+    report["diagnostic_findings"] = report.setdefault("diagnostic_findings", []) \
+        + diagnostic_findings(lines)
+
+
+# Строки успешного вывода платформы (наблюдены в actual-выводах create и check). Они не находки.
+# Важно: «Синтаксических ошибок не обнаружено!» печатается и на базе, куда конфигурация не
+# загрузилась, поэтому доказательством оно не является — доказательством служит сверка состава
+# выгрузки с исходником.
+OBSERVED_OK_LINES = ("успешно завершено", "Синтаксических ошибок не обнаружено")
+
+
+def diagnostic_findings(lines: list) -> list:
+    """Находки диагностики: непустые строки вывода, которые нельзя прочитать как успех."""
+    findings = []
+    for line in lines:
+        text = line.strip()
+        if not text or any(marker in text for marker in OBSERVED_OK_LINES):
+            continue
+        findings.append(text)
+    return findings
+
+
+def step_problem(step: str, result: dict) -> str:
+    """Отказ шага, названный по шагу. Таймаут — отдельный случай: ненулевой код у него от убийства
+    процесса, а не от платформы, и вывод при таймауте пустой."""
+    if result.get("timed_out"):
+        return ("шаг '" + step + "' не завершился в пределах ожидания "
+                + str(result.get("seconds", 0)) + " с: платформа убита контуром, вывод "
+                + str(result.get("bytes", 0)) + " байт")
+    if result.get("code") != 0:
+        return "шаг '" + step + "' вернул код " + str(result.get("code"))
+    return ""
+
+
+def cycle_continues(step: str, result: dict) -> bool:
+    """Продолжать ли цикл платформы после отказа шага.
+
+    Таймаут загрузки — прекращаем: контур убил платформу посреди записи в файловую базу, и
+    показания следующих шагов читаются как доказательство, которого нет. В gate-03 именно так и
+    вышло: убитая загрузка (600 с, 0 байт), а /CheckModules на той же базе вернул код 0 и
+    «Синтаксических ошибок не обнаружено!».
+
+    Ненулевой код загрузки без таймаута — продолжаем: платформа договорала до конца и выгрузка
+    нужна, чтобы видеть, что именно осталось в базе (в gate-02 она показала пустую конфигурацию).
+    """
+    if result.get("timed_out"):
+        return False
+    if step == "create" and result.get("code") != 0:
+        return False
+    return True
 
 
 def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
@@ -145,10 +248,13 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
     p1c_src = opts.get("p1c") or local.get("p1c", "")
     expected_path = opts.get("expected") or str(DEFAULT_EXPECTED)
     report = {"cfg_name": cfg.name, "expected_file": pathlib.Path(expected_path).name,
-              "load_code": None, "check_code": None, "dump_files": 0,
+              "load_code": None, "check_code": None, "create_code": None, "dump_files": 0,
+              "ib_ready_before": None,
               "metadata": {}, "layout_source": {}, "layout_dump": {}, "layout_compare": {},
               "tool_counts_source": {}, "tool_counts_dump": {}, "tool_counts_error": "",
-              "diff_files": {}, "diagnostics": [], "steps": [], "reason": ""}
+              "diff_files": {}, "diagnostics": [], "diagnostics_by_step": {},
+              "diagnostic_findings": [], "step_problems": [], "steps": [], "rights": {},
+              "reason": ""}
 
     def finish(code: int) -> tuple:
         _write(out_json, report)
@@ -168,31 +274,56 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
         report["reason"] = metadata["reason"]
         return finish(1)
 
+    # 1b. Права ролей: самый дешёвый статический шаг после метаданных и самый дорогой по цене
+    #     пропуск — платформа об отказе этого класса молчит (загрузка зависает без кода и вывода),
+    #     а p1c права не читает вовсе. Наблюдение gate-03 и `docs/evidence/load-bisect.md`.
+    rights_result = rights.check(cfg, rights.load_canon(opts.get("canon")))
+    report["rights"] = {"code": rights_result["code"], "counts": rights_result["counts"],
+                        "problems": rights_result["problems"], "objects": rights_result["objects"]}
+    if rights_result["code"] == 1:
+        report["reason"] = ("содержимое прав роли неканонично: "
+                            + "; ".join(rights_result["problems"])
+                            + " — платформу об этом не спросить: права она принимает молча и "
+                              "затем не завершает загрузку")
+        return finish(1)
+    if rights_result["code"] == 2:
+        report["reason"] = "права ролей не проверены: " + "; ".join(rights_result["problems"])
+        return finish(2)
+
     loop_opts = {"bin": opts.get("bin") or local.get("bin", ""),
                  "ib": opts.get("ib") or local.get("ib", ""),
                  "cfg": str(cfg),
                  "dump": opts.get("dump") or local.get("dump", ""),
                  "out": opts.get("loop_out") or str(ROOT / "reports" / "gate-loop-out.txt"),
                  "timeout": opts.get("timeout", 300)}
-
     refusal = paths.refuse_missing_bin(loop_opts["bin"]) or (
         "" if loop_opts["ib"] else "информационной базы не названо: нужен --ib")
     if refusal or not loop_opts["dump"]:
         report["reason"] = refusal or "каталога выгрузки не названо: нужен --dump"
         return finish(2)
 
-    # 2. Цикл платформы.
-    for step in ("load", "check", "dump"):
-        result = ib_loop.run_step(step, loop_opts)
+    # 2. Цикл платформы. Каждый шаг пишет в свой файл вывода: наблюдение gate-03 показало, что при
+    #    общем файле вывод загрузки (пустой) перезаписывался следующим шагом, и в отчёте оставались
+    #    только строки /CheckModules.
+    ib_ready = ib_loop.ib_exists(loop_opts["ib"])
+    report["ib_ready_before"] = ib_ready
+    for step in loop_steps(ib_ready):
+        step_opts = dict(loop_opts, out=loop_out_path(loop_opts["out"], step))
+        result = ib_loop.run_step(step, step_opts)
         report["steps"].append({k: v for k, v in result.items() if k != "lines"})
-        if step == "load":
+        record_diagnostics(report, step, result["lines"][:20])
+        if step == "create":
+            report["create_code"] = result["code"]
+        elif step == "load":
             report["load_code"] = result["code"]
-            if result["code"] != 0:
-                report["reason"] = "загрузка не выполнена: код платформы " + str(result["code"])
-                report["diagnostics"] = result["lines"][:20]
         elif step == "check":
             report["check_code"] = result["code"]
-            report["diagnostics"] = report["diagnostics"] + result["lines"][:20]
+        problem = step_problem(step, result)
+        if problem:
+            report["step_problems"].append(problem)
+            if not cycle_continues(step, result):
+                report["reason"] = "цикл платформы прерван на шаге '" + step + "': " + problem
+                return finish(1)
 
     # 3. Что вернула платформа. Свежесть файлов выгрузки — отдельное доказательство: наблюдение
     #    B2 показало, что каталог выгрузки может выглядеть полным файлами прежней выгрузки.
@@ -206,7 +337,7 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
                                   if dump_dir.is_dir() else 0)
     report["source_configuration_name"] = counts.configuration_name(cfg)
     report["dump_configuration_name"] = counts.configuration_name(dump_dir)
-    report["layout_dump"] = layout.layout_counts(dump_dir)
+    report["layout_dump"] = layout.layout_counts(dump_dir, ignore=PLATFORM_ADDED_FILES)
     report["layout_compare"] = layout.compare_expected(report["layout_source"], report["layout_dump"])
     report["diff_files"] = file_diff(cfg, dump_dir)
 
@@ -229,13 +360,18 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
                             f"(свежих файлов выгрузки {report['dump_fresh_files']} из "
                             f"{report['dump_files']}): загрузка не выполнена, несмотря на коды "
                             f"платформы {report['load_code']}/{report['check_code']}")
+        if report["diagnostic_findings"]:
+            report["reason"] += " | диагностика: " + " || ".join(
+                report["diagnostic_findings"][:6])
         return finish(1)
 
     failed = [step for step in report["steps"] if step["code"] != 0]
     if failed:
         report["reason"] = ("шаг платформы вернул ненулевой код: "
-                            + json.dumps([{ "step": s["step"], "code": s["code"]} for s in failed],
-                                         ensure_ascii=False))
+                            + json.dumps([{"step": s["step"], "code": s["code"]} for s in failed],
+                                         ensure_ascii=False)
+                            + (" | диагностика: " + " || ".join(report["diagnostic_findings"][:6])
+                               if report["diagnostic_findings"] else ""))
         return finish(1)
     if report["layout_compare"]:
         report["reason"] = ("числа метаданных источника и выгрузки расходятся: "
@@ -247,7 +383,9 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
                                           "only_dump": report["diff_files"]["only_dump"]},
                                          ensure_ascii=False))
         return finish(1)
-    if report["diagnostics"]:
+    if report["diagnostic_findings"]:
+        report["reason"] = ("платформа сообщила о проблеме, не вернув ненулевого кода: "
+                            + " || ".join(report["diagnostic_findings"][:6]))
         return finish(1)
     # Итог по эталону: числа задаёт спецификация до сборки, поэтому расхождение с ними —
     # провал итерации (недособрано или лишние объекты), даже если платформа молчит.
@@ -281,6 +419,8 @@ def main(argv: list) -> int:
     parser.add_argument("--dump", default="", help="каталог выгрузки (пересоздаётся)")
     parser.add_argument("--p1c", default="", help="каталог src инструментов p1c")
     parser.add_argument("--local", default=str(ROOT / "local.paths.json"))
+    parser.add_argument("--canon", default="",
+                        help="JSON измеренного канона прав (docs/canonical-rights.json)")
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--no-platform", action="store_true",
                         help="только сверка метаданных с ожиданием (без цикла платформы)")
@@ -288,16 +428,22 @@ def main(argv: list) -> int:
 
     cfg = args.cfg or paths.load_local(args.local).get("cfg", "")
     opts = {"bin": args.bin, "ib": args.ib, "dump": args.dump, "p1c": args.p1c,
-            "local": args.local, "timeout": args.timeout, "expected": args.expected}
+            "local": args.local, "timeout": args.timeout, "expected": args.expected,
+            "canon": args.canon}
     if args.no_platform:
         code, metadata = check_metadata(cfg, args.expected)
+        rights_result = rights.check(cfg, rights.load_canon(args.canon))
         print("гейт метаданных: код " + str(code) + " | " + json.dumps(
             {"layout": metadata.get("layout"), "declared": metadata.get("declared"),
              "hard_problems": metadata.get("hard_problems"),
-             "expected_mismatch": metadata.get("expected_mismatch")}, ensure_ascii=False))
+             "expected_mismatch": metadata.get("expected_mismatch"),
+             "rights_code": rights_result["code"], "rights_counts": rights_result["counts"]},
+            ensure_ascii=False))
+        for problem in rights_result["problems"]:
+            print("права:", problem)
         if metadata.get("reason"):
             print("причина: " + metadata["reason"])
-        return code
+        return code if code != 0 else rights_result["code"]
 
     code, report = run(cfg, args.out, opts)
     print("гейт: код " + str(code) + " | " + json.dumps(
@@ -306,11 +452,17 @@ def main(argv: list) -> int:
          "layout_source": report.get("layout_source"),
          "layout_dump": report.get("layout_dump"),
          "expected_mismatch": (report.get("metadata") or {}).get("expected_mismatch"),
+         "rights_code": (report.get("rights") or {}).get("code"),
+         "rights_counts": (report.get("rights") or {}).get("counts"),
          "tool_counts_source": report.get("tool_counts_source"),
          "tool_blind_kinds": report.get("tool_blind_kinds")}, ensure_ascii=False))
+    for problem in (report.get("rights") or {}).get("problems", [])[:8]:
+        print("права:", problem)
     if report.get("reason"):
         print("причина: " + report["reason"])
-    for line in report.get("diagnostics", [])[:12]:
+    for problem in report.get("step_problems", []):
+        print("отказ шага: " + problem)
+    for line in report.get("diagnostic_findings", [])[:12]:
         print("диагностика: " + line)
     return code
 
