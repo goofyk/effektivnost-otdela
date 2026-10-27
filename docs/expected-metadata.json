@@ -1,0 +1,26 @@
+{
+  "comment": "Эталон гейта (scripts/gate.py): числа задаёт спецификация до сборки итерации, а не инструмент. Согласованность двух инструментов ничего не доказывает: платформа канонизирует свойства, а читатель p1c.load не читает папки Roles, Subsystems, Languages, SessionParameters и содержимое Templates. Имена видов — те же, что у независимого счётчика scripts/layout.py.",
+  "iteration": 1,
+  "iteration_comment": "тонкий срез: по одному представителю каждого дорогого по формату вида — конфигурация, язык, подсистема, перечисление, константа, иерархический справочник с табличной секцией, тройка файлов одной формы, документ, регистр сведений, регистр накопления, отчёт с минимальным макетом СКД, общий модуль, роль",
+  "expected": {
+    "language": 1,
+    "subsystem": 1,
+    "enum": 1,
+    "constant": 1,
+    "catalog": 1,
+    "document": 1,
+    "information_register": 1,
+    "accumulation_register": 1,
+    "common_module": 1,
+    "report": 1,
+    "role": 1,
+    "form_descriptor": 1,
+    "form_data": 1,
+    "form_module": 1,
+    "report_template": 1,
+    "report_template_data": 1,
+    "role_rights": 1,
+    "bsl_module": 4
+  },
+  "bsl_module_comment": "модуль формы + модуль объекта документа + модуль регистратора (RecordSetModule) + общий модуль"
+}
