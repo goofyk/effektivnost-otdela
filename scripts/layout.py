@@ -105,6 +105,11 @@ def layout_counts(cfg_dir, ignore: tuple = ()) -> dict:
     report_templates = [p for p in base.rglob("Templates/*.xml") if "Ext" not in p.parts]
     report_template_data = list(base.rglob("Templates/*/Ext/Template.xml"))
     role_rights = list(base.rglob("Roles/*/Ext/Rights.xml"))
+    # Предопределённые данные справочников (замер корпусов `corpora_*`: файлы
+    # `Папка/Имя/Ext/Predefined.xml` с записями `<Item>`). Ни одна папка предопределённых данных
+    # в `COLLECTIONS_MAP` не описана, и ни один дескриптор метаданных их не содержит: это класс,
+    # о котором инструменты молчат даже когда файл потерян.
+    predefined_data = list(base.rglob("*/Ext/Predefined.xml"))
     object_modules = [p for p in base.rglob("Ext/*.bsl")]
     bsl = [p for p in base.rglob("*.bsl")]
 
@@ -116,6 +121,7 @@ def layout_counts(cfg_dir, ignore: tuple = ()) -> dict:
     counts["report_template"] = len(report_templates)
     counts["report_template_data"] = len(report_template_data)
     counts["role_rights"] = len(role_rights)
+    counts["predefined_data"] = len(predefined_data)
     counts["object_module"] = len(object_modules)
     counts["bsl_module"] = len(bsl)
     counts["files"] = sum(1 for p in base.rglob("*")

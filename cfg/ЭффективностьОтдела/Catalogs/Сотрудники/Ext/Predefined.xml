@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<PredefinedData xmlns="http://v8.1c.ru/8.3/xcf/predef" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CatalogPredefinedItems" version="2.20">
+	<Item id="6b1e3a24-1c77-4c0a-90d1-0a2f4c6e8301">
+		<Name>РуководствоОтдела</Name>
+		<Code>000000001</Code>
+		<Description>Руководство отдела</Description>
+		<IsFolder>true</IsFolder>
+		<ChildItems>
+			<Item id="6b1e3a24-1c77-4c0a-90d1-0a2f4c6e8302">
+				<Name>РуководительОтдела</Name>
+				<Code>000000002</Code>
+				<Description>Руководитель отдела</Description>
+				<IsFolder>false</IsFolder>
+			</Item>
+		</ChildItems>
+	</Item>
+	<Item id="6b1e3a24-1c77-4c0a-90d1-0a2f4c6e8303">
+		<Name>СпециалистыРеализации</Name>
+		<Code>000000003</Code>
+		<Description>Специалисты реализации</Description>
+		<IsFolder>true</IsFolder>
+		<ChildItems>
+			<Item id="6b1e3a24-1c77-4c0a-90d1-0a2f4c6e8304">
+				<Name>АналитикОтдела</Name>
+				<Code>000000004</Code>
+				<Description>Аналитик отдела</Description>
+				<IsFolder>false</IsFolder>
+			</Item>
+			<Item id="6b1e3a24-1c77-4c0a-90d1-0a2f4c6e8305">
+				<Name>РазработчикОтдела</Name>
+				<Code>000000005</Code>
+				<Description>Разработчик отдела</Description>
+				<IsFolder>false</IsFolder>
+			</Item>
+		</ChildItems>
+	</Item>
+	<Item id="6b1e3a24-1c77-4c0a-90d1-0a2f4c6e8306">
+		<Name>ВнешнийПодрядчик</Name>
+		<Code>000000006</Code>
+		<Description>Внешний подрядчик (не входит в месячную ёмкость отдела)</Description>
+		<IsFolder>false</IsFolder>
+	</Item>
+</PredefinedData>

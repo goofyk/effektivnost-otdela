@@ -78,16 +78,17 @@
 		<ChildObjects>
 			<Language>Русский</Language>
 			<Subsystem>ЭффективностьОтдела</Subsystem>
+			<Role>СотрудникОтдела</Role>
+			<Role>АдминистраторСистемы</Role>
 			<CommonModule>РасчётПоказателей</CommonModule>
-			<Enum>ГрейдыСпециалистов</Enum>
 			<Constant>НормаЧасовВМесяц</Constant>
 			<Catalog>Сотрудники</Catalog>
 			<Document>ФактРаботы</Document>
+			<Enum>ГрейдыСпециалистов</Enum>
+			<Report>ОтчётЗагрузки</Report>
+			<DataProcessor>ВыгрузкаЗатратCSV</DataProcessor>
 			<InformationRegister>ПланЗагрузки</InformationRegister>
 			<AccumulationRegister>ЗатратыВремени</AccumulationRegister>
-			<Report>ОтчётЗагрузки</Report>
-			<Role>СотрудникОтдела</Role>
-			<Role>АдминистраторСистемы</Role>
 		</ChildObjects>
 	</Configuration>
 </MetaDataObject>

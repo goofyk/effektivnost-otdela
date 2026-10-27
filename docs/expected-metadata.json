@@ -1,7 +1,7 @@
 {
-  "comment": "Эталон гейта (scripts/gate.py): числа задаёт спецификация ДО сборки итерации, а не инструмент. Согласованность двух инструментов ничего не доказывает: платформа канонизирует свойства, а читатель p1c.load не читает папки Roles, Subsystems, Languages, SessionParameters и содержимое Templates. Имена видов — те же, что у независимого счётчика scripts/layout.py.",
-  "iteration": 1,
-  "iteration_comment": "тонкий срез: по одному представителю каждого дорогого по формату вида — конфигурация, язык, подсистема с Content, перечисление, константа, иерархический справочник с табличной секцией и тройкой файлов одной управляемой формы, документ с движением в регистры, периодический регистр сведений с модулем менеджера, регистр накопления, общий модуль, отчёт с макетом схемы компоновки данных, роль с правами",
+  "comment": "Эталон гейта (scripts/gate.py): числа задаёт спецификация ДО сборки итерации, а не инструмент. Согласованность двух инструментов ничего не доказывает: платформа канонизирует свойства, а читатель p1c.load не читает папки Roles, Subsystems, Languages, SessionParameters, предопределённые данные и содержимое Templates. Имена видов — те же, что у независимого счётчика scripts/layout.py.",
+  "iteration": 5,
+  "iteration_comment": "к тонкому срезу добавлена внешняя обработка с управляемой формой: справочник с предопределёнными данными (Catalogs/Сотрудники/Ext/Predefined.xml), обработка ВыгрузкаЗатратCSV с модулем объекта, модулем менеджера и формой ФормаВыгрузки (дескриптор + Ext/Form.xml + Ext/Form/Module.bsl); права на обработку добавлены обеим ролям",
   "expected": {
     "language": 1,
     "subsystem": 1,
@@ -13,18 +13,21 @@
     "accumulation_register": 1,
     "common_module": 1,
     "report": 1,
+    "data_processor": 1,
     "role": 2,
-    "form_descriptor": 1,
-    "form_data": 1,
-    "form_module": 1,
+    "form_descriptor": 2,
+    "form_data": 2,
+    "form_module": 2,
     "report_template": 1,
     "report_template_data": 1,
     "role_rights": 2,
-    "object_module": 4,
-    "bsl_module": 5,
-    "files": 24
+    "predefined_data": 1,
+    "object_module": 6,
+    "bsl_module": 8,
+    "files": 31
   },
-  "object_module_comment": "Catalogs/Сотрудники/Ext/ObjectModule.bsl + Documents/ФактРаботы/Ext/ObjectModule.bsl + InformationRegisters/ПланЗагрузки/Ext/ManagerModule.bsl + CommonModules/РасчётПоказателей/Ext/Module.bsl",
-  "bsl_module_comment": "object_module (4) + модуль формы Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form/Module.bsl = 5 файлов BSL",
+  "object_module_comment": "Catalogs/Сотрудники/Ext/ObjectModule.bsl + Documents/ФактРаботы/Ext/ObjectModule.bsl + InformationRegisters/ПланЗагрузки/Ext/ManagerModule.bsl + CommonModules/РасчётПоказателей/Ext/Module.bsl + DataProcessors/ВыгрузкаЗатратCSV/Ext/ObjectModule.bsl + DataProcessors/ВыгрузкаЗатратCSV/Ext/ManagerModule.bsl",
+  "bsl_module_comment": "object_module (6) + модули форм Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form/Module.bsl и DataProcessors/ВыгрузкаЗатратCSV/Forms/ФормаВыгрузки/Ext/Form/Module.bsl = 8 файлов BSL",
+  "predefined_data_comment": "замер канона (docs/evidence/corpora-predefined-samples.md): предопределённые данные пишутся только там, где их пишет платформа (справочник), файлом Ext/Predefined.xml с записями <Item>; дескриптора PredefinedDataName в каноне нет (0 из 337 образцов). Этот класс файлов p1c.load не читает вовсе.",
   "files_comment": "ConfigDumpInfo.xml в исходнике не пишется: это журнал версий объектов, он появляется только в выгрузке платформы"
 }

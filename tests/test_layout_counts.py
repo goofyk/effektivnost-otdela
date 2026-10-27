@@ -46,6 +46,12 @@ SAMPLE = {
     "Reports/Отчет.xml": '<MetaDataObject><Report/></MetaDataObject>\n',
     "Reports/Отчет/Templates/ОсновнаяСхемаКомпоновкиДанных.xml": '<Template/>\n',
     "Reports/Отчет/Templates/ОсновнаяСхемаКомпоновкиДанных/Ext/Template.xml": '<XDTODocument/>\n',
+    "Catalogs/Сотрудники/Ext/Predefined.xml": (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<PredefinedData xmlns="http://v8.1c.ru/8.3/xcf/predef" version="2.20">\n'
+        '\t<Item uuid="c0000000-0000-4000-8000-0000000000a1">\n'
+        '\t\t<Name>Основной</Name>\n\t</Item>\n</PredefinedData>\n'
+    ),
 }
 
 
@@ -79,6 +85,16 @@ class LayoutCountTest(unittest.TestCase):
         self.assertEqual(counts["form_data"], 1)
         self.assertEqual(counts["form_module"], 1)
         self.assertEqual(counts["report_template"], 1)
+
+    def test_predefined_data_is_a_class_of_its_own(self):
+        """Предопределённые данные: дескриптор метаданных их не описывает (замер канона: 0 из 337
+        образцов с PredefinedDataName), единственный след — сам файл Ext/Predefined.xml. Потеря
+        файла не должна выглядеть как «всё в порядке с метаданными справочника»."""
+        counts = layout.layout_counts(self.cfg)
+        self.assertEqual(counts["predefined_data"], 1)
+        self.assertEqual(counts["catalog"], 1)
+        (self.cfg / "Catalogs/Сотрудники/Ext/Predefined.xml").unlink()
+        self.assertNotIn("predefined_data", layout.layout_counts(self.cfg))
 
     def test_reads_declared_child_objects_of_configuration(self):
         declared = layout.declared_children(self.cfg)
