@@ -9,9 +9,11 @@ import contextlib
 import io
 import json
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
+import time
 import types
 import unittest
 
@@ -264,6 +266,46 @@ class GateTest(unittest.TestCase):
             self.assertEqual(report["rights"]["code"], 0, report["rights"]["problems"])
             self.assertEqual(code, 2, report.get("reason"))
             self.assertIn("платформ", report["reason"])
+
+    def test_gate_refuses_when_the_dump_rights_are_not_the_source_rights(self):
+        """Наблюдение gate-05: платформа выбрасывает права, равные значению по умолчанию роли, —
+        в исходнике 8 блоков / 43 права, в выгрузке 6 блоков / 19 прав. Пока составы не совпадают,
+        намерение роли не зафиксировано, и гейт обязан отказать даже при нулевых кодах платформы:
+        коды платформы о правах молчат."""
+        pattern = re.compile(r"[ \t]*<right>\s*<name>[^<]+</name>\s*<value>[^<]*</value>\s*"
+                             r"</right>[ \t]*\r?\n", re.S)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = pathlib.Path(tmp) / "cfg"
+            dump = pathlib.Path(tmp) / "dump"
+            shutil.copytree(ROOT / "cfg" / "ЭффективностьОтдела", source)
+            shutil.copytree(source, dump)
+            path = dump / "Roles" / "СотрудникОтдела" / "Ext" / "Rights.xml"
+            text = path.read_bytes().decode("utf-8-sig")
+            dropped, removed = pattern.subn("", text, count=1)
+            self.assertEqual(removed, 1, "право в файле прав должно найтись")
+            path.write_bytes(dropped.encode("utf-8"))
+            local = pathlib.Path(tmp) / "local.paths.json"
+            local.write_text(json.dumps({"bin": sys.executable, "ib": str(pathlib.Path(tmp) / "ib"),
+                                         "dump": str(dump)}), encoding="utf-8")
+            exists = ib_loop.ib_exists
+            step = ib_loop.run_step
+            ib_loop.ib_exists = lambda ib: True
+            ib_loop.run_step = lambda name, opts: {"step": name, "code": 0, "timed_out": False,
+                                                   "seconds": 1.0, "bytes": 3,
+                                                   "started": time.time(), "lines": []}
+            try:
+                code, report = gate.run(str(source), str(pathlib.Path(tmp) / "gate.json"),
+                                        {"cfg": str(source), "local": str(local)})
+            finally:
+                ib_loop.ib_exists = exists
+                ib_loop.run_step = step
+        self.assertEqual(code, 1, report.get("reason"))
+        self.assertIn("прав выгрузки", report["reason"])
+        immobility = report["rights_immobility"]
+        self.assertEqual(immobility["code"], 1)
+        self.assertEqual(len(immobility["dropped"]), 1, immobility["problems"])
+        self.assertEqual(immobility["counts"]["source_rights"],
+                         immobility["counts"]["dump_rights"] + 1)
 
     def test_refuses_without_cfg(self):
         with tempfile.TemporaryDirectory() as tmp:

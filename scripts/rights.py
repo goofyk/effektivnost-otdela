@@ -1,19 +1,29 @@
 """Статическая проверка прав ролей по канону, измеренному на корпусах.
 
-Существует по двум наблюдениям проверочного контура:
+Существует по трём наблюдениям проверочного контура (доказательства:
+`docs/evidence/load-bisect.md`, `docs/evidence/dump-canonicalization.md`):
 
 1. p1c права роли не читает вовсе: `p1c-load model` о ролях и подсистемах молчит, словаря прав
    доступа к объектам в `p1c/src/p1c/data/` нет (`docs/evidence/tool-probe-negative-cases.md`,
    раздел 3). Связку «роль ↔ права ↔ объекты метаданных» контур обязан считать сам.
-2. Отказ класса «неканоническое содержимое прав» платформа не объясняет никак:
-   `/LoadConfigFromFiles` зависает без вывода и без кода, и единственный наблюдаемый сигнал —
-   «шаг не завершился в пределах ожидания» (`docs/evidence/load-bisect.md`). Виновником оказался
-   блок `<object><name>Enum.ГрейдыСпециалистов</name>`: по 1672 каноническим файлам прав
-   (103 686 блоков `<object>`) блоков вида `Enum.` нет ни одного
+2. Отказ класса «неканоническое содержимое прав» платформа не объясняет никак: `/LoadConfigFromFiles`
+   зависает без вывода и без кода. Виновником оказался блок `<object><name>Enum.ГрейдыСпециалистов</name>`:
+   по 1672 каноническим файлам прав (103 686 блоков `<object>`) блоков вида `Enum.` нет ни одного
    (`probe/corpora_rights_probe.py`, `docs/canonical-rights.json`).
+3. Платформа молча переписывает состав прав (замер `scripts/rights.py` на исходнике и на выгрузке,
+   гейт gate-05): снимает права, совпадающие со значением по умолчанию роли (`setForNewObjects=false`
+   и `false`-право; `setForNewObjects=true` и выданное право), снимает имена прав, которых нет у вида
+   объекта (`Read` у `Report`, `Set` у `InformationRegister`), и дописывает права, без которых
+   интерактивные права не работают (`Edit`, `Posting` для документа).
 
-Итог: эта проверка — дешёвая замена отсутствующему инструменту. Она находит поломку до запуска
-платформы, вместо того чтобы ждать 30–600 с зависания с пустым выводом.
+Итог: эта проверка — дешёвая замена отсутствующему инструменту. Она находит и поломку до запуска
+платформы (вместо 30–600 с зависания с пустым выводом), и то, что платформа сделает с нашими правами.
+
+Три проверки:
+- `problems_of` — канон вида объекта, существование ссылки, имя права (в том числе внутри вида),
+  избыточное значение права, отсутствие верхних флагов;
+- `composition` — состав прав одной конфигурации (объект → право → значение);
+- `immobile` — неподвижность: состав исходника обязан совпасть с составом выгрузки загруженной базы.
 """
 from __future__ import annotations
 
@@ -99,8 +109,19 @@ def load_canon(path_json=None) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def default_value(flags: dict) -> str:
+    """Значение права по умолчанию роли: `setForNewObjects=true` — право выдано, иначе — не выдано.
+
+    Измерено корпусами (`docs/canonical-rights.json`, `top_flags`): `setForNewObjects=false` в 1648
+    файлах из 1672, `true` в 5. Наблюдение платформы (gate-05): при `false` из выгрузки исчезают
+    все `false`-права, при `true` — все выданные права.
+    """
+    return "true" if flags.get("setForNewObjects") == "true" else "false"
+
+
 def problems_of(files: dict, known: dict, canon: dict) -> list:
-    """Находки по правам: неканонический вид объекта, ссылка на отсутствующий объект, выдуманное имя права.
+    """Находки по правам: неканонический вид объекта, ссылка на отсутствующий объект, имя права
+    (вообще или внутри вида объекта), избыточное значение права, отсутствие верхних флагов.
 
     Пустой канон — отказ проверки, а не «находок нет»: без измеренных чисел нельзя утверждать,
     что чего-то в каноне нет.
@@ -111,9 +132,16 @@ def problems_of(files: dict, known: dict, canon: dict) -> list:
                 "docs/canonical-rights.json (без измеренных чисел нельзя утверждать, "
                 "что чего-то в каноне нет)"]
     right_names = canon.get("right_names") or {}
+    names_by_kind = canon.get("right_names_by_kind") or {}
     canonical_files = canon.get("rights_files", 0)
     found = []
     for relative, parsed in sorted(files.items()):
+        flags = parsed["flags"]
+        if "setForNewObjects" not in flags:
+            found.append(relative + ": в файле прав нет флага setForNewObjects: по "
+                         + str(canonical_files) + " каноническим файлам он есть всегда, и без него "
+                               "нельзя сказать, какое значение права платформа сочтёт избыточным")
+        redundant_by_object = {}
         for obj in parsed["objects"]:
             name = obj["name"]
             kind = name.split(".")[0]
@@ -124,10 +152,29 @@ def problems_of(files: dict, known: dict, canon: dict) -> list:
             elif known and owner(name) not in known:
                 found.append(relative + ": права ссылаются на объект, которого в конфигурации нет: "
                              + name + " (платформа об этом молчит и загружает такую базу дальше)")
+            allowed = names_by_kind.get(kind) or right_names
+            blocks_of_kind = kinds.get(kind, 0)
             for right_name in sorted(obj["rights"]):
-                if right_names and right_name not in right_names:
+                if allowed and right_name not in allowed:
                     found.append(relative + ": имя права " + right_name + " в объекте " + name
-                                 + " не встречается ни в одном каноническом файле прав")
+                                 + " не встречается ни в одном из " + str(blocks_of_kind)
+                                 + " канонических блоков вида " + kind
+                                 + " — платформа его снимает (наблюдение gate-05: `Read` у отчёта, "
+                                   "`Set` у регистра сведений)")
+            default = default_value(flags)
+            same_default = sorted(right_name for right_name, value in obj["rights"].items()
+                                  if value == default)
+            if same_default:
+                redundant_by_object[name] = same_default
+        if redundant_by_object:
+            default = default_value(flags)
+            found.append(relative + ": права со значением " + default + " ("
+                         + "; ".join(name + ": " + ", ".join(names)
+                                     for name, names in sorted(redundant_by_object.items()))
+                         + ") совпадают со значением по умолчанию роли (setForNewObjects="
+                         + flags.get("setForNewObjects", "(нет)") + ") — платформа выбрасывает их при "
+                           "загрузке, и состав выгрузки не совпадёт с исходником; канонический стиль "
+                           "роли: описывать только выдаваемые права")
     return found
 
 
@@ -146,6 +193,64 @@ def check(cfg_dir, canon: dict | None = None) -> dict:
     objects = {relative: [obj["name"] for obj in parsed["objects"]]
                for relative, parsed in files.items()}
     return {"code": 1 if found else 0, "problems": found, "counts": counts, "objects": objects}
+
+
+def composition(cfg_dir) -> dict:
+    """Состав прав конфигурации: относительный файл прав -> имя объекта -> {право: значение}.
+
+    Именно в этом виде сравнение исходника и выгрузки не зависит от порядка прав и от перевода строк.
+    """
+    return {relative: {obj["name"]: obj["rights"] for obj in parsed["objects"]}
+            for relative, parsed in rights_files(cfg_dir).items()}
+
+
+def immobile(source_dir, dump_dir, canon: dict | None = None) -> dict:
+    """Неподвижность прав: что написано в исходнике, то и осталось в выгрузке загруженной базы.
+
+    Наблюдение gate-05: исходник 8 блоков / 43 права, выгрузка 6 блоков / 19 прав. Пока составы не
+    совпадают, намерение роли нельзя считать зафиксированным, и формулировка «права роли настроены»
+    не допускается (это же закреплено в `docs/evidence/dump-canonicalization.md`).
+    """
+    if not pathlib.Path(source_dir).is_dir():
+        return {"code": 2, "problems": ["исходника конфигурации нет: " + str(source_dir)],
+                "dropped": [], "added": []}
+    if not pathlib.Path(dump_dir).is_dir():
+        return {"code": 2, "problems": ["выгрузки загруженной базы нет: " + str(dump_dir)
+                                        + " (нужен шаг платформы dump)"], "dropped": [], "added": []}
+    source, dump = composition(source_dir), composition(dump_dir)
+    dropped, added = [], []
+    for relative in sorted(set(source) | set(dump)):
+        left, right = source.get(relative, {}), dump.get(relative, {})
+        for object_name in sorted(set(left) | set(right)):
+            left_rights, right_rights = left.get(object_name), right.get(object_name)
+            if left_rights is None:
+                added.append(relative + ": платформа добавила блок " + object_name
+                             + " (права: " + ", ".join(sorted(right_rights)) + "), которого в "
+                               "исходнике нет")
+                continue
+            if right_rights is None:
+                dropped.append(relative + ": блок " + object_name + " исчез из выгрузки целиком ("
+                               + str(len(left_rights)) + " прав)")
+                continue
+            for right_name in sorted(set(left_rights) - set(right_rights)):
+                dropped.append(relative + ": право " + right_name + " объекта " + object_name
+                               + " (значение " + left_rights[right_name] + ") платформа не сохранила")
+            for right_name in sorted(set(right_rights) - set(left_rights)):
+                added.append(relative + ": платформа добавила право " + right_name + " объекта "
+                             + object_name + " (значение " + right_rights[right_name]
+                             + "), которого в исходнике нет")
+            for right_name in sorted(set(left_rights) & set(right_rights)):
+                if left_rights[right_name] != right_rights[right_name]:
+                    dropped.append(relative + ": право " + right_name + " объекта " + object_name
+                                   + " сменило значение " + left_rights[right_name] + " -> "
+                                   + right_rights[right_name])
+    counts = {"source_blocks": sum(len(item) for item in source.values()),
+              "dump_blocks": sum(len(item) for item in dump.values()),
+              "source_rights": sum(len(rights) for item in source.values() for rights in item.values()),
+              "dump_rights": sum(len(rights) for item in dump.values() for rights in item.values())}
+    problems = dropped + added
+    return {"code": 1 if problems else 0, "problems": problems, "dropped": dropped, "added": added,
+            "counts": counts}
 
 
 if __name__ == "__main__":

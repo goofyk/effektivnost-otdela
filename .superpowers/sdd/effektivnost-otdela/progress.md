@@ -72,3 +72,45 @@
   (`graph.py:50`, `metadata/model.py:396`) раскладывают список как `(en, ru)`.
 - Наблюдение (слепая зона p1c с готовыми данными): объектные страницы событий в `EVENT_SIGNATURES`
   есть (42 из 135), но их читает только проверка форм; для модулей объекта проверок нет.
+- Наблюдение (платформенная добавка права, gate-06): платформа добавила в выгрузку
+  `DataAdministration` (`true`) в блок `Configuration.ЭффективностьОтдела`, которого в источнике
+  не было (74 права → 75). Замер канона `docs/canonical-rights-configuration.json` (1360 блоков
+  `Configuration.`): `DataAdministration` 15 раз, все 15 `true`; из 14 блоков с
+  `Administration=true` 14 имеют `DataAdministration`, случаев «`Administration` без
+  `DataAdministration`» — 0. Ruling: это право в блоке `Configuration.` писать явно.
+- Наблюдение (зелёные итерации 2 и 3, gate-07/gate-08/gate-09): гейт даёт код 0 трижды подряд —
+  `load 0` (3.0 с, 3 байта), `check 0` (2.0 с, 73 байта), `dump 0` (2.0 с, 3 байта); 25 свежих
+  файлов выгрузки, `layout_source == layout_dump` (`files 24`), `expected_mismatch {}`,
+  `rights_immobility.code 0` (15 блоков / 75 прав с обеих сторон, `dropped []`, `added []`),
+  `same 15`, `reordered 2` (оба `Roles/*/Ext/Rights.xml`), `differ 7` (только платформенные
+  добавки), `platform_added ["ConfigDumpInfo.xml"]`, `only_source []`, `only_dump []`.
+- Ruling (снимает прежний запрет): формулировка «права роли настроены» допустима — неподвижный
+  состав прав получен (`rights.immobile(источник, выгрузка)` код 0, gate-07/08/09). Гейт это
+  закрепил как отказ: несовпадение состава прав — код 1, отсутствие выгрузки — код 2.
+- Наблюдение (класс 6): платформа переставляет блоки `<object>` в файлах прав, не меняя их
+  состава (длины совпадают побайтово: 4951/4951 и 2201/2201). Контур называет это отдельным
+  классом `reordered` (`gate.file_diff`); «переписано» и «переставлено» — разные утверждения,
+  перестановка дефектом не является. Граница закреплена тестом `tests/test_dump_compare.py`:
+  перестановка плюс потерянная строка — уже `differ`.
+- Наблюдение (дефект исправлен, класс 7): `<LanguageCode>RU</LanguageCode>` платформа приняла
+  молча и сохранила как есть. Канон — строчный: `ru` 6/6 корпусов, `en` 2
+  (`docs/canonical-languages.json`, `<v8:lang>`: `ru` во всех шести). После исправления на `ru`
+  подтверждено gate-09 в обе стороны: источник 1253 байта и выгрузка 1251 байта содержат
+  `<LanguageCode>ru</LanguageCode>` (2 байта — класс 1, завершающий перевод строки).
+- Наблюдение (замер имён режимов платформы): имена лежат в таблицах имён `1cv8.exe`
+  (1 805 720 байт) и `1cv8c.exe` (1 590 168 байт) в кодировании UTF-16LE — однобайтовый поиск их
+  не находит. `probe/platform_flag_strings.py`: `RunScript` @1232250 (соседи `AgentMode`,
+  `AllZones`, `CheckCanApplyConfigurationExtensions`), `EXECUTE` @1241314 (соседи
+  `UsePrivilegedMode`, `LogUI`, `URL`, `IBConnectionString`, `IBName`), `CheckModules` @1239378
+  (соседи `CheckConfig`, `DeleteCfg`, `RollbackCfg`, `GetConfigGenerationID`), `RunEnterprise`
+  @1239698 (соседи `DumpCfg`, `LoadCfg`, `RestoreIB`), `ExplAuthDlg` @1229360 и `CommandParam`
+  @1228488 (оба в группе ключей `CmdLine/...`), `authoff` @1234186 (сосед
+  `CmdLine/ResetSavedAuth`). Те же имена — в `1cv8c.exe`. Оговорка: `EXECUTE` встречается и в
+  заведомо не-CLI контекстах (`IDS_DBCOPIES_EXECUTE_ERROR`, `IDS_EXECUTE_ONLY_COPIES_…` в
+  `backbas.dll`/`backbas*.res`, `COMMANDEXECUTE` в `7zc.dll`) — само по себе имя режима не
+  подтверждает.
+- Наблюдение (ошибка замера исправлена): `probe/platform_flag_strings.py` при пустом `--root`
+  подменял корень каталогом `.` и давал 0 вхождений, сканируя рабочий каталог (`Path("") ==
+  Path('.')` — пустой путь не признак «пути нет»). Скрипт теперь требует `--root` или ключ `bin`
+  в `local.paths.json` и отказывает кодом 2.'
+  есть (42 из 135), но их читает только проверка форм; для модулей объекта проверок нет.

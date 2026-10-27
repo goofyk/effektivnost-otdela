@@ -4,6 +4,13 @@
 	<setForAttributesByDefault>true</setForAttributesByDefault>
 	<independentRightsOfChildObjects>false</independentRightsOfChildObjects>
 	<object>
+		<name>Constant.НормаЧасовВМесяц</name>
+		<right>
+			<name>Read</name>
+			<value>true</value>
+		</right>
+	</object>
+	<object>
 		<name>Catalog.Сотрудники</name>
 		<right>
 			<name>Read</name>
@@ -17,26 +24,6 @@
 			<name>InputByString</name>
 			<value>true</value>
 		</right>
-		<right>
-			<name>Insert</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>Update</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>Delete</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>InteractiveInsert</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>InteractiveDelete</name>
-			<value>false</value>
-		</right>
 	</object>
 	<object>
 		<name>Document.ФактРаботы</name>
@@ -45,10 +32,6 @@
 			<value>true</value>
 		</right>
 		<right>
-			<name>View</name>
-			<value>true</value>
-		</right>
-		<right>
 			<name>Insert</name>
 			<value>true</value>
 		</right>
@@ -57,7 +40,19 @@
 			<value>true</value>
 		</right>
 		<right>
+			<name>Posting</name>
+			<value>true</value>
+		</right>
+		<right>
+			<name>View</name>
+			<value>true</value>
+		</right>
+		<right>
 			<name>InteractiveInsert</name>
+			<value>true</value>
+		</right>
+		<right>
+			<name>Edit</name>
 			<value>true</value>
 		</right>
 		<right>
@@ -67,14 +62,6 @@
 		<right>
 			<name>InteractivePostingRegular</name>
 			<value>true</value>
-		</right>
-		<right>
-			<name>Delete</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>InteractiveDelete</name>
-			<value>false</value>
 		</right>
 	</object>
 	<object>
@@ -87,14 +74,6 @@
 			<name>View</name>
 			<value>true</value>
 		</right>
-		<right>
-			<name>Update</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>Set</name>
-			<value>false</value>
-		</right>
 	</object>
 	<object>
 		<name>AccumulationRegister.ЗатратыВремени</name>
@@ -106,58 +85,23 @@
 			<name>View</name>
 			<value>true</value>
 		</right>
-		<right>
-			<name>TotalsControl</name>
-			<value>false</value>
-		</right>
 	</object>
 	<object>
 		<name>Report.ОтчётЗагрузки</name>
 		<right>
-			<name>Read</name>
+			<name>Use</name>
 			<value>true</value>
 		</right>
 		<right>
 			<name>View</name>
 			<value>true</value>
 		</right>
-		<right>
-			<name>Use</name>
-			<value>true</value>
-		</right>
 	</object>
 	<object>
-		<name>Constant.НормаЧасовВМесяц</name>
+		<name>Subsystem.ЭффективностьОтдела</name>
 		<right>
-			<name>Read</name>
+			<name>View</name>
 			<value>true</value>
-		</right>
-		<right>
-			<name>Update</name>
-			<value>false</value>
-		</right>
-	</object>
-	<object>
-		<name>Configuration.ЭффективностьОтдела</name>
-		<right>
-			<name>ThickClient</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>ExternalConnection</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>Automation</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>TechnicalSpecialistMode</name>
-			<value>false</value>
-		</right>
-		<right>
-			<name>Administration</name>
-			<value>false</value>
 		</right>
 	</object>
 </Rights>

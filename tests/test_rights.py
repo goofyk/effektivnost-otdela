@@ -1,9 +1,27 @@
 """Тесты статической проверки прав ролей (scripts/rights.py).
 
-Главная проверка — регрессия на найденном отказе загрузки: блок `<object>` с правами на
-перечисление (`Enum.ГрейдыСпециалистов`) `/LoadConfigFromFiles` не договорала до конца (30–45 с,
-0 байт вывода, кода нет), а p1c прав роли не читает вовсе. Контур обязан находить эту поломку
-статически, до запуска платформы, и по измеренному канону, а не по догадке.
+Три наблюдения контура, из которых выросли эти проверки (доказательства:
+`docs/evidence/load-bisect.md`, `docs/evidence/dump-canonicalization.md`):
+
+1. `/LoadConfigFromFiles` не завершается (30–45 с, 0 байт вывода, кода нет), если в правах роли
+   остаётся блок `<object>` с именем `Enum.ГрейдыСпециалистов`, даже с единственным правом `Read`.
+   По 1672 каноническим файлам прав (103 686 блоков) блоков вида `Enum.` нет ни одного.
+2. Платформа не отвергает, а **молча выбрасывает** права, которые совпадают со значением по
+   умолчанию роли: в `Roles/СотрудникОтдела/Ext/Rights.xml` (`setForNewObjects=false`) мы писали
+   `Insert/Update/Delete/InteractiveInsert/InteractiveDelete = false` — в выгрузке их нет; блок
+   `Configuration.ЭффективностьОтдела`, где все пять прав были `false`, исчез целиком. У роли
+   `АдминистраторСистемы` с `setForNewObjects=true` (значение по умолчанию — право выдано) восемь
+   выданных прав исчезли все: роль осталась без блоков.
+3. Платформа **выбрасывает имена прав, которых нет у вида объекта**: `Read` для отчёта (по канону у
+   `Report` бывает только `Edit, Use, View`) и `Set` для регистра сведений (у `InformationRegister`
+   его нет ни в одном из 15 660 канонических блоков). А интерактивные права, наоборот,
+   **дописывает**: за `InteractivePosting` платформа добавила `Posting` и `Edit`, которых мы не
+   писали. По канону интерактивные права не встречаются без `Edit` ни разу (`Catalog`
+   `InteractiveInsert`: `Edit` 2368 / без 0).
+
+Отсюда контракт контура: права роли проверяются статически (p1c их не читает вовсе) и в исходнике
+пишутся только те права, которые роль действительно выдаёт, с каноническими для вида имена­ми и с
+именами, которые платформа всё равно дописала бы.
 """
 from __future__ import annotations
 
@@ -29,6 +47,17 @@ CANON = {"rights_files": 1672, "object_blocks": 103686,
          "right_names": {"Read": 21132, "View": 53476, "Update": 11986, "Set": 640,
                          "Use": 5770, "TotalsControl": 2027}}
 
+# Имена прав внутри вида объекта (тот же замер, `right_names_by_kind`, без среза по числу).
+CANON_BY_KIND = dict(CANON, right_names_by_kind={
+    "Catalog": {"Read": 5862, "View": 4129, "InputByString": 3815, "Update": 3310, "Insert": 3209,
+                "Edit": 2472, "InteractiveInsert": 2368},
+    "Report": {"View": 3548, "Use": 3261, "Edit": 109},
+    "InformationRegister": {"Read": 6306, "View": 4678, "Update": 3869, "Edit": 2391,
+                            "TotalsControl": 1664},
+    "Constant": {"Read": 4936, "View": 3494, "Update": 1744, "Edit": 1135},
+    "Configuration": {"Administration": 14, "ExternalConnection": 12, "ThickClient": 13},
+})
+
 CANONICAL_RIGHTS = """<Rights>
 \t<object>
 \t\t<name>Catalog.Сотрудники</name>
@@ -44,13 +73,23 @@ CANONICAL_RIGHTS = """<Rights>
 </Rights>
 """
 
+FLAGS_FALSE = ("<setForNewObjects>false</setForNewObjects>"
+               "<setForAttributesByDefault>true</setForAttributesByDefault>"
+               "<independentRightsOfChildObjects>false</independentRightsOfChildObjects>")
+FLAGS_TRUE = ("<setForNewObjects>true</setForNewObjects>"
+              "<setForAttributesByDefault>true</setForAttributesByDefault>"
+              "<independentRightsOfChildObjects>false</independentRightsOfChildObjects>")
+
+
+def one_file(body: str, flags: str = FLAGS_FALSE) -> dict:
+    """Один файл прав роли целиком — так, как его читает `rights.rights_files`."""
+    return {"Roles/СотрудникОтдела/Ext/Rights.xml": rights.parse_rights(
+        "<Rights>" + flags + body + "</Rights>")}
+
 
 class ParseRightsTest(unittest.TestCase):
     def test_parses_blocks_rights_and_top_flags(self):
-        text = ('<Rights><setForNewObjects>false</setForNewObjects>'
-                '<setForAttributesByDefault>true</setForAttributesByDefault>'
-                '<independentRightsOfChildObjects>false</independentRightsOfChildObjects>'
-                + CANONICAL_RIGHTS + "</Rights>")
+        text = ('<Rights>' + FLAGS_FALSE + CANONICAL_RIGHTS + "</Rights>")
         parsed = rights.parse_rights(text)
         self.assertEqual([obj["name"] for obj in parsed["objects"]], ["Catalog.Сотрудники"])
         self.assertEqual(parsed["objects"][0]["rights"], {"Read": "true", "View": "true"})
@@ -70,9 +109,8 @@ class ParseRightsTest(unittest.TestCase):
 class RightsProblemsTest(unittest.TestCase):
     def test_finds_rights_on_a_kind_that_never_appears_in_the_canon(self):
         """Найденный отказ загрузки: права на перечисление вешают `/LoadConfigFromFiles`."""
-        files = {"Roles/СотрудникОтдела/Ext/Rights.xml": rights.parse_rights(
-            '<object><name>Enum.ГрейдыСпециалистов</name>'
-            '<right><name>Read</name><value>true</value></right></object>')}
+        files = one_file('<object><name>Enum.ГрейдыСпециалистов</name>'
+                         '<right><name>Read</name><value>true</value></right></object>')
         known = {"Enum.ГрейдыСпециалистов": "Enums/ГрейдыСпециалистов.xml"}
         found = rights.problems_of(files, known, CANON)
         self.assertEqual(len(found), 1, found)
@@ -80,33 +118,142 @@ class RightsProblemsTest(unittest.TestCase):
         self.assertIn("ни одного", found[0])
 
     def test_finds_rights_that_reference_an_object_the_configuration_does_not_have(self):
-        files = {"Roles/СотрудникОтдела/Ext/Rights.xml": rights.parse_rights(
-            '<object><name>Catalog.ТакогоНет</name>'
-            '<right><name>Read</name><value>true</value></right></object>')}
+        files = one_file('<object><name>Catalog.ТакогоНет</name>'
+                         '<right><name>Read</name><value>true</value></right></object>')
         found = rights.problems_of(files, {"Catalog.Сотрудники": "Catalogs/Сотрудники.xml"}, CANON)
         self.assertEqual(len(found), 1, found)
         self.assertIn("ТакогоНет", found[0])
         self.assertIn("молчит", found[0])
 
     def test_finds_an_invented_right_name(self):
-        files = {"Roles/СотрудникОтдела/Ext/Rights.xml": rights.parse_rights(
-            '<object><name>Catalog.Сотрудники</name>'
-            '<right><name>ЧиститьПамять</name><value>true</value></right></object>')}
+        files = one_file('<object><name>Catalog.Сотрудники</name>'
+                         '<right><name>ЧиститьПамять</name><value>true</value></right></object>')
         found = rights.problems_of(files, {"Catalog.Сотрудники": "Catalogs/Сотрудники.xml"}, CANON)
         self.assertEqual(len(found), 1, found)
         self.assertIn("ЧиститьПамять", found[0])
 
     def test_accepts_a_canonical_rights_block(self):
-        files = {"Roles/СотрудникОтдела/Ext/Rights.xml": rights.parse_rights(CANONICAL_RIGHTS)}
+        files = one_file(CANONICAL_RIGHTS)
         self.assertEqual(rights.problems_of(files, {"Catalog.Сотрудники": "x"}, CANON), [])
 
     def test_refuses_to_claim_absence_of_something_without_a_measured_canon(self):
-        files = {"Roles/Роль/Ext/Rights.xml": rights.parse_rights(
-            '<object><name>Enum.ГрейдыСпециалистов</name>'
-            '<right><name>Read</name><value>true</value></right></object>')}
+        files = one_file('<object><name>Enum.ГрейдыСпециалистов</name>'
+                         '<right><name>Read</name><value>true</value></right></object>')
         found = rights.problems_of(files, {}, {})
         self.assertEqual(len(found), 1, found)
         self.assertIn("не измерен", found[0])
+
+    def test_finds_a_right_the_canon_never_grants_for_this_kind_of_object(self):
+        """Наблюдение gate-05: платформа сняла `Read` с блока `Report.ОтчётЗагрузки` и `Set` с блока
+        `InformationRegister.ПланЗагрузки`. Имена канонические вообще, но не для этого вида:
+        у `Report` в 3 731 каноническом блоке бывает только `Edit, Use, View`, у `InformationRegister`
+        в 15 660 блоках имени `Set` нет."""
+        files = one_file('<object><name>Report.ОтчётЗагрузки</name>'
+                         '<right><name>Read</name><value>true</value></right></object>')
+        found = rights.problems_of(files, {"Report.ОтчётЗагрузки": "Reports/ОтчётЗагрузки.xml"},
+                                   CANON_BY_KIND)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("Read", found[0])
+        self.assertIn("Report", found[0])
+
+        files = one_file('<object><name>InformationRegister.ПланЗагрузки</name>'
+                         '<right><name>Set</name><value>false</value></right></object>')
+        found = rights.problems_of(files,
+                                   {"InformationRegister.ПланЗагрузки": "x"}, CANON_BY_KIND)
+        self.assertTrue(any("Set" in item and "InformationRegister" in item for item in found), found)
+
+    def test_finds_a_right_that_equals_the_role_default_and_the_platform_drops_it(self):
+        """Наблюдение gate-05: при `setForNewObjects=false` права со значением `false` исчезают из
+        выгрузки (блок `Configuration.ЭффективностьОтдела` со всеми пятью правами `false` пропал
+        целиком). Писать их — значит гарантировать, что состав выгрузки не совпадёт с исходником."""
+        files = one_file('<object><name>Catalog.Сотрудники</name>'
+                         '<right><name>Read</name><value>true</value></right>'
+                         '<right><name>Update</name><value>false</value></right></object>')
+        found = rights.problems_of(files, {"Catalog.Сотрудники": "x"}, CANON_BY_KIND)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("Update", found[0])
+        self.assertIn("false", found[0])
+        self.assertIn("выгрузки", found[0])
+
+    def test_the_same_rule_works_the_other_way_for_a_role_that_grants_everything(self):
+        """Роль `АдминистраторСистемы` с `setForNewObjects=true`: восемь выданных прав исчезли из
+        выгрузки все (значение по умолчанию — право выдано). Канон: `setForNewObjects=true` бывает в
+        5 файлах из 1672, и каноническая `АдминистраторСистемы` в корпусах — `setForNewObjects=false`
+        с явными выданными правами (101–460 блоков с правом `true`)."""
+        files = one_file('<object><name>Catalog.Сотрудники</name>'
+                         '<right><name>Read</name><value>true</value></right></object>',
+                         flags=FLAGS_TRUE)
+        found = rights.problems_of(files, {"Catalog.Сотрудники": "x"}, CANON_BY_KIND)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("setForNewObjects=true", found[0])
+
+    def test_the_canonical_style_of_a_role_is_only_the_granted_rights(self):
+        files = one_file('<object><name>Catalog.Сотрудники</name>'
+                         '<right><name>Read</name><value>true</value></right>'
+                         '<right><name>View</name><value>true</value></right>'
+                         '<right><name>InputByString</name><value>true</value></right></object>')
+        self.assertEqual(rights.problems_of(files, {"Catalog.Сотрудники": "x"}, CANON_BY_KIND), [])
+
+
+class ImmobilityTest(unittest.TestCase):
+    """Состав прав обязан быть неподвижным: что написано, то и осталось в загруженной базе."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = pathlib.Path(self.tmp.name)
+        self.source = self.base / "cfg"
+        self.dump = self.base / "dump"
+        self.addCleanup(self.tmp.cleanup)
+
+    def write(self, root: pathlib.Path, relative: str, body: str, flags: str = FLAGS_FALSE) -> None:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = "<Rights>" + flags + body + "</Rights>"
+        path.write_bytes(b"\xef\xbb\xbf" + text.replace("\n", "\r\n").encode("utf-8"))
+
+    def test_composition_names_every_object_right_with_its_value(self):
+        self.write(self.source, "Roles/Роль/Ext/Rights.xml",
+                   '<object><name>Catalog.Сотрудники</name>'
+                   '<right><name>Read</name><value>true</value></right></object>')
+        composition = rights.composition(self.source)
+        self.assertEqual(composition, {"Roles/Роль/Ext/Rights.xml":
+                                       {"Catalog.Сотрудники": {"Read": "true"}}}, composition)
+
+    def test_reports_the_rights_the_platform_dropped_and_the_ones_it_added(self):
+        self.write(self.source, "Roles/Роль/Ext/Rights.xml",
+                   '<object><name>Catalog.Сотрудники</name>'
+                   '<right><name>Read</name><value>true</value></right>'
+                   '<right><name>Update</name><value>false</value></right></object>')
+        self.write(self.dump, "Roles/Роль/Ext/Rights.xml",
+                   '<object><name>Catalog.Сотрудники</name>'
+                   '<right><name>Read</name><value>true</value></right>'
+                   '<right><name>Edit</name><value>true</value></right></object>')
+        result = rights.immobile(self.source, self.dump, CANON_BY_KIND)
+        self.assertEqual(result["code"], 1, result)
+        self.assertEqual([item for item in result["dropped"] if "Update" in item], result["dropped"],
+                         result)
+        self.assertTrue(any("Edit" in item for item in result["added"]), result)
+
+    def test_immobile_when_the_source_already_means_what_the_platform_writes(self):
+        body = ('<object><name>Catalog.Сотрудники</name>'
+                '<right><name>Read</name><value>true</value></right>'
+                '<right><name>View</name><value>true</value></right></object>')
+        self.write(self.source, "Roles/Роль/Ext/Rights.xml", body)
+        self.write(self.dump, "Roles/Роль/Ext/Rights.xml", body)
+        result = rights.immobile(self.source, self.dump, CANON_BY_KIND)
+        self.assertEqual(result["code"], 0, result)
+        self.assertEqual(result["dropped"], [], result)
+        self.assertEqual(result["added"], [], result)
+
+    def test_refuses_when_a_whole_block_disappeared(self):
+        self.write(self.source, "Roles/Роль/Ext/Rights.xml",
+                   '<object><name>Configuration.ЭффективностьОтдела</name>'
+                   '<right><name>ThickClient</name><value>false</value></right></object>')
+        self.write(self.dump, "Roles/Роль/Ext/Rights.xml", "")
+        result = rights.immobile(self.source, self.dump, CANON_BY_KIND)
+        self.assertEqual(result["code"], 1, result)
+        self.assertTrue(any("Configuration.ЭффективностьОтдела" in item
+                            for item in result["dropped"]), result)
 
 
 class ConfigurationRightsTest(unittest.TestCase):
@@ -121,8 +268,8 @@ class ConfigurationRightsTest(unittest.TestCase):
             self.assertIn(expected, names, "нет " + expected + " из " + str(sorted(names))[:200])
 
     def test_the_fixed_configuration_passes_the_rights_check(self):
-        """Регрессия: после того как блок прав на перечисление убран, права нашей конфигурации чисты
-        по измеренному канону (`docs/canonical-rights.json`)."""
+        """Регрессия: права нашей конфигурации чисты по измеренному канону — включая имена прав
+        внутри вида объекта и канонический стиль роли (только выдаваемые права)."""
         canon = rights.load_canon()
         if not canon:
             self.skipTest("канон прав не измерен (нет docs/canonical-rights.json)")
@@ -131,6 +278,15 @@ class ConfigurationRightsTest(unittest.TestCase):
         self.assertEqual(result["counts"]["rights_files"], 2, result["counts"])
         self.assertGreaterEqual(result["counts"]["rights"], 20, result["counts"])
 
+    def test_no_right_in_our_roles_is_written_with_a_value_the_platform_would_drop(self):
+        """Снятое право в исходнике — это обещание, которое платформа не сохраняет: после загрузки
+        оно выглядит как «права не настраивались». Канонический стиль — описывать только выдаваемые."""
+        for relative, parsed in sorted(rights.rights_files(SOURCE).items()):
+            default = "true" if parsed["flags"].get("setForNewObjects") == "true" else "false"
+            for obj in parsed["objects"]:
+                granted = sorted(name for name, value in obj["rights"].items() if value != default)
+                self.assertEqual(granted, sorted(obj["rights"]), relative + " / " + obj["name"])
+
     def test_adding_the_enum_rights_block_back_reproduces_the_load_failure_signal(self):
         """Тот самый дефект обязан находиться статически: без 30–600 с ожидания платформы."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -138,10 +294,11 @@ class ConfigurationRightsTest(unittest.TestCase):
             shutil.copytree(SOURCE, copy)
             path = copy / "Roles" / "СотрудникОтдела" / "Ext" / "Rights.xml"
             text = path.read_bytes().decode("utf-8-sig").replace("\r\n", "\n")
+            marker = "\t<object>\n\t\t<name>Constant.НормаЧасовВМесяц</name>"
+            self.assertIn(marker, text)
             injected = ('\t<object>\n\t\t<name>Enum.ГрейдыСпециалистов</name>\n\t\t<right>\n'
                         '\t\t\t<name>Read</name>\n\t\t\t<value>true</value>\n\t\t</right>\n\t</object>\n'
-                        + "\t<object>\n\t\t<name>Constant.НормаЧасовВМесяц</name>")
-            self.assertIn("\t<object>\n\t\t<name>Constant.НормаЧасовВМесяц</name>", text)
+                        + marker)
             path.write_bytes(injected.replace("\n", "\r\n").encode("utf-8"))
             result = rights.check(copy, rights.load_canon())
             self.assertEqual(result["code"], 1, result["problems"])

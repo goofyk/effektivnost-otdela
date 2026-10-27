@@ -1,0 +1,123 @@
+{
+  "language_files": 8,
+  "language_codes": {
+    "ru": 6,
+    "en": 2
+  },
+  "language_names": {
+    "Русский": 6,
+    "Английский": 2
+  },
+  "languages": [
+    {
+      "corpus": "Project",
+      "file": "Русский.xml",
+      "name": "Русский",
+      "code": "ru"
+    },
+    {
+      "corpus": "коды <v8:lang> в Project",
+      "used": {
+        "ru": 1223
+      }
+    },
+    {
+      "corpus": "ERP",
+      "file": "Английский.xml",
+      "name": "Английский",
+      "code": "en"
+    },
+    {
+      "corpus": "ERP",
+      "file": "Русский.xml",
+      "name": "Русский",
+      "code": "ru"
+    },
+    {
+      "corpus": "коды <v8:lang> в ERP",
+      "used": {
+        "ru": 12743,
+        "en": 12743
+      }
+    },
+    {
+      "corpus": "LSO",
+      "file": "Английский.xml",
+      "name": "Английский",
+      "code": "en"
+    },
+    {
+      "corpus": "LSO",
+      "file": "Русский.xml",
+      "name": "Русский",
+      "code": "ru"
+    },
+    {
+      "corpus": "коды <v8:lang> в LSO",
+      "used": {
+        "ru": 7835,
+        "en": 3
+      }
+    },
+    {
+      "corpus": "SRC",
+      "file": "Русский.xml",
+      "name": "Русский",
+      "code": "ru"
+    },
+    {
+      "corpus": "коды <v8:lang> в SRC",
+      "used": {
+        "ru": 6196
+      }
+    },
+    {
+      "corpus": "SSL",
+      "file": "Русский.xml",
+      "name": "Русский",
+      "code": "ru"
+    },
+    {
+      "corpus": "коды <v8:lang> в SSL",
+      "used": {
+        "ru": 8039
+      }
+    },
+    {
+      "corpus": "UH",
+      "file": "Русский.xml",
+      "name": "Русский",
+      "code": "ru"
+    },
+    {
+      "corpus": "коды <v8:lang> в UH",
+      "used": {
+        "ru": 11849,
+        "en": 27
+      }
+    }
+  ],
+  "v8_lang_by_corpus": {
+    "коды <v8:lang> в Project": {
+      "ru": 1223
+    },
+    "коды <v8:lang> в ERP": {
+      "ru": 12743,
+      "en": 12743
+    },
+    "коды <v8:lang> в LSO": {
+      "ru": 7835,
+      "en": 3
+    },
+    "коды <v8:lang> в SRC": {
+      "ru": 6196
+    },
+    "коды <v8:lang> в SSL": {
+      "ru": 8039
+    },
+    "коды <v8:lang> в UH": {
+      "ru": 11849,
+      "en": 27
+    }
+  }
+}

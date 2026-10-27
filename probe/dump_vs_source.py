@@ -52,7 +52,8 @@ def main(argv: list | None = None) -> int:
     source_dir = pathlib.Path(argv[0]) if argv else pathlib.Path(local["cfg"])
     dump_dir = pathlib.Path(local["dump"])
     diff = gate.file_diff(source_dir, dump_dir)
-    print("одинаковых:", len(diff["same"]), "| отличающихся:", len(diff["differ"]),
+    print("одинаковых:", len(diff["same"]), "| переставлено без изменения содержимого:",
+          len(diff["reordered"]), diff["reordered"], "| отличающихся:", len(diff["differ"]),
           "| только в источнике:", diff["only_source"],
           "| файлов платформы в выгрузке:", diff["platform_added"],
           "| только в выгрузке:", diff["only_dump"])

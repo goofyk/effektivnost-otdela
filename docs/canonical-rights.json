@@ -133,7 +133,12 @@
       "ReadDataHistory": 440,
       "ViewDataHistory": 438,
       "UpdateDataHistorySettings": 436,
-      "ReadDataHistoryOfMissingData": 435
+      "ReadDataHistoryOfMissingData": 435,
+      "UpdateDataHistoryVersionComment": 431,
+      "EditDataHistoryVersionComment": 431,
+      "SwitchToDataHistoryVersion": 429,
+      "UpdateDataHistory": 427,
+      "UpdateDataHistoryOfMissingData": 427
     },
     "InformationRegister": {
       "Edit": 11499,
@@ -187,7 +192,13 @@
       "TechnicalSpecialistMode": 13,
       "EventLog": 12,
       "ExternalConnection": 12,
-      "Automation": 12
+      "Automation": 12,
+      "InteractiveOpenExtDataProcessors": 11,
+      "InteractiveOpenExtReports": 11,
+      "MobileClient": 11,
+      "ExclusiveMode": 6,
+      "CollaborationSystemInfoBaseRegistration": 4,
+      "ExclusiveModeTerminationAtSessionStart": 2
     },
     "Subsystem": {
       "View": 967
@@ -212,7 +223,8 @@
       "UpdateDataHistoryVersionComment": 8,
       "ViewDataHistory": 8,
       "EditDataHistoryVersionComment": 8,
-      "SwitchToDataHistoryVersion": 8
+      "SwitchToDataHistoryVersion": 8,
+      "UpdateDataHistorySettings": 6
     },
     "ChartOfCharacteristicTypes": {
       "Edit": 308,
@@ -234,7 +246,12 @@
       "ReadDataHistory": 22,
       "ReadDataHistoryOfMissingData": 20,
       "UpdateDataHistoryVersionComment": 20,
-      "ViewDataHistory": 20
+      "ViewDataHistory": 20,
+      "EditDataHistoryVersionComment": 20,
+      "InteractiveDeleteMarkedPredefinedData": 20,
+      "UpdateDataHistory": 19,
+      "UpdateDataHistoryOfMissingData": 19,
+      "SwitchToDataHistoryVersion": 19
     },
     "DataProcessor": {
       "View": 2442,
@@ -280,7 +297,14 @@
       "InteractiveDelete": 416,
       "UpdateDataHistorySettings": 100,
       "ReadDataHistory": 99,
-      "SwitchToDataHistoryVersion": 98
+      "SwitchToDataHistoryVersion": 98,
+      "ReadDataHistoryOfMissingData": 97,
+      "UpdateDataHistory": 97,
+      "UpdateDataHistoryOfMissingData": 97,
+      "UpdateDataHistoryVersionComment": 97,
+      "ViewDataHistory": 97,
+      "EditDataHistoryVersionComment": 97,
+      "InteractiveDeleteMarked": 87
     },
     "AccumulationRegister": {
       "Edit": 1670,
@@ -312,7 +336,10 @@
       "UpdateDataHistory": 1,
       "UpdateDataHistoryOfMissingData": 1,
       "UpdateDataHistorySettings": 1,
-      "UpdateDataHistoryVersionComment": 1
+      "UpdateDataHistoryVersionComment": 1,
+      "ViewDataHistory": 1,
+      "EditDataHistoryVersionComment": 1,
+      "SwitchToDataHistoryVersion": 1
     },
     "WebService": {
       "Use": 951
@@ -359,7 +386,9 @@
       "ReadDataHistory": 1,
       "ReadDataHistoryOfMissingData": 1,
       "UpdateDataHistory": 1,
-      "UpdateDataHistoryOfMissingData": 1
+      "UpdateDataHistoryOfMissingData": 1,
+      "UpdateDataHistorySettings": 1,
+      "UpdateDataHistoryVersionComment": 1
     },
     "AccountingRegister": {
       "Edit": 90,
@@ -388,7 +417,10 @@
       "UpdateDataHistory": 1,
       "UpdateDataHistoryOfMissingData": 1,
       "UpdateDataHistorySettings": 1,
-      "UpdateDataHistoryVersionComment": 1
+      "UpdateDataHistoryVersionComment": 1,
+      "ViewDataHistory": 1,
+      "EditDataHistoryVersionComment": 1,
+      "SwitchToDataHistoryVersion": 1
     },
     "CalculationRegister": {
       "Read": 4,

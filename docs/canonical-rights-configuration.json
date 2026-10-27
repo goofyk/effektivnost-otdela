@@ -1,0 +1,89 @@
+{
+  "rights_files": 1672,
+  "configuration_blocks": 1360,
+  "right_names": {
+    "MainWindowModeNormal": 1352,
+    "MainWindowModeWorkplace": 1332,
+    "MainWindowModeEmbeddedWorkplace": 1332,
+    "MainWindowModeFullscreenWorkplace": 1332,
+    "MainWindowModeKiosk": 1332,
+    "AnalyticsSystemClient": 1331,
+    "SaveUserData": 32,
+    "Output": 31,
+    "ThinClient": 24,
+    "WebClient": 22,
+    "Administration": 18,
+    "DataAdministration": 15,
+    "UpdateDataBaseConfiguration": 14,
+    "ConfigurationExtensionsAdministration": 14,
+    "ActiveUsers": 13,
+    "ThickClient": 13,
+    "TechnicalSpecialistMode": 13,
+    "EventLog": 12,
+    "ExternalConnection": 12,
+    "Automation": 12,
+    "InteractiveOpenExtDataProcessors": 11,
+    "InteractiveOpenExtReports": 11,
+    "MobileClient": 11,
+    "ExclusiveMode": 6,
+    "CollaborationSystemInfoBaseRegistration": 4,
+    "ExclusiveModeTerminationAtSessionStart": 2
+  },
+  "right_values": {
+    "MainWindowModeNormal|true": 1352,
+    "Administration|true": 14,
+    "DataAdministration|true": 15,
+    "UpdateDataBaseConfiguration|true": 10,
+    "ExclusiveMode|true": 6,
+    "ActiveUsers|true": 13,
+    "EventLog|true": 12,
+    "ThinClient|true": 24,
+    "WebClient|true": 22,
+    "ThickClient|true": 10,
+    "ExternalConnection|true": 8,
+    "Automation|true": 8,
+    "TechnicalSpecialistMode|true": 10,
+    "MainWindowModeWorkplace|true": 1332,
+    "MainWindowModeEmbeddedWorkplace|true": 1332,
+    "MainWindowModeFullscreenWorkplace|true": 1332,
+    "MainWindowModeKiosk|true": 1332,
+    "AnalyticsSystemClient|true": 1331,
+    "SaveUserData|true": 32,
+    "ConfigurationExtensionsAdministration|true": 11,
+    "Output|true": 31,
+    "Administration|false": 4,
+    "UpdateDataBaseConfiguration|false": 4,
+    "ExternalConnection|false": 4,
+    "Automation|false": 4,
+    "CollaborationSystemInfoBaseRegistration|false": 1,
+    "InteractiveOpenExtDataProcessors|false": 4,
+    "InteractiveOpenExtReports|false": 4,
+    "InteractiveOpenExtDataProcessors|true": 7,
+    "InteractiveOpenExtReports|true": 7,
+    "MobileClient|true": 11,
+    "CollaborationSystemInfoBaseRegistration|true": 3,
+    "ExclusiveModeTerminationAtSessionStart|true": 2,
+    "ThickClient|false": 3,
+    "TechnicalSpecialistMode|false": 3,
+    "ConfigurationExtensionsAdministration|false": 3
+  },
+  "administration_pairs": {
+    "ни одного из двух": 1345,
+    "оба права": 14,
+    "DataAdministration без Administration": 1
+  },
+  "samples": {
+    "Administration|true": [
+      "Roles/АдминистраторСистемы/Ext/Rights.xml -> Configuration.УправлениеПредприятием",
+      "Roles/Администрирование/Ext/Rights.xml -> Configuration.УправлениеПредприятием"
+    ],
+    "DataAdministration|true": [
+      "Roles/АдминистраторСистемы/Ext/Rights.xml -> Configuration.УправлениеПредприятием",
+      "Roles/Администрирование/Ext/Rights.xml -> Configuration.УправлениеПредприятием"
+    ],
+    "Administration|false": [
+      "Roles/ГПН_АдминистраторДанных/Ext/Rights.xml -> Configuration.КорпоративныйУниверситет",
+      "Roles/ПолныеПрава/Ext/Rights.xml -> Configuration.КорпоративныйУниверситет"
+    ]
+  }
+}

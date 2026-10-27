@@ -79,7 +79,11 @@ def measure() -> dict:
             "object_blocks": sum(kinds.values()),
             "object_kinds": dict(kinds.most_common()),
             "right_names": dict(names.most_common()),
-            "right_names_by_kind": {kind: dict(counter.most_common(20))
+            # Без среза по числу: канон по именам прав внутри вида обязан быть полным, иначе вывод
+            # «этого имени прав у вида N нет» нельзя отличить от «мы досмотрели только топ-20».
+            # Наблюдение: при срезе топ-20 у `Configuration` пропало `ExclusiveMode`, хотя
+            # канонический набор прав роли `АдминистраторСистемы` его содержит.
+            "right_names_by_kind": {kind: dict(counter.most_common())
                                     for kind, counter in names_by_kind.items()},
             "top_flags": dict(top_flags.most_common()),
             "samples": samples}

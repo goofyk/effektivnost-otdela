@@ -24,8 +24,9 @@
 B2: из 239 файлов свежими оказались 3, `Configuration.xml` с `Name=Конфигурация`).
 
 Коды выхода: 0 — расхождений и диагностических находок нет; 1 — находки платформы, расхождение
-чисел или нарушенная парность файлов; 2 — проверить нельзя (нет каталога конфигурации, нет файла
-ожидаемых чисел, нет файла платформы или базы).
+чисел, нарушенная парность файлов или состав прав выгрузки не совпадает с исходником; 2 —
+проверить нельзя (нет каталога конфигурации, нет файла ожидаемых чисел, нет файла платформы или базы,
+нет выгрузки для сверки прав).
 
 Два правила цикла, выведенные из наблюдения gate-03 (загрузка не завершилась за 600 с, вывод 0
 байт): каждый шаг пишет в свой файл вывода (`loop_out_path`), потому что при общем файле пустой
@@ -138,6 +139,11 @@ def file_diff(cfg_dir, dump_dir, added: tuple = PLATFORM_ADDED_FILES) -> dict:
     - `ConfigDumpInfo.xml` в выгрузке есть, а в исходнике его быть не может: это файл платформы
       (он есть во всех канонических выгрузках корпусов), и он называется отдельно — иначе
       «выгрузка длиннее исходника» стало бы вечным отказом.
+    - замер gate-07 на файлах прав: `Roles/АдминистраторСистемы/Ext/Rights.xml` — 4951 символ в
+      источнике и 4951 в выгрузке, `Roles/СотрудникОтдела/Ext/Rights.xml` — 2201 и 2201; состав
+      прав совпадает (`rights.immobile`: `dropped []`, `added []`), но блоки стоят в другом порядке.
+      Такие файлы называются `reordered` отдельно от `differ`: «содержимое переписано» и
+      «блоки переставлены» — разные утверждения, и второе дефектом не является.
     """
     def listing(root: pathlib.Path) -> dict:
         return {p.relative_to(root).as_posix(): p for p in root.rglob("*") if p.is_file()}
@@ -148,19 +154,29 @@ def file_diff(cfg_dir, dump_dir, added: tuple = PLATFORM_ADDED_FILES) -> dict:
             data = data[3:]
         return data.replace(b"\r\n", b"\n").rstrip(b"\r\n")
 
+    def line_multiset(data: bytes) -> list:
+        """Отсортированный список строк: «те же строки, другой порядок»."""
+        return sorted(data.split(b"\n"))
+
     a, b = listing(pathlib.Path(cfg_dir)), listing(pathlib.Path(dump_dir))
-    same, differ, only_source, only_dump, platform_added = [], [], [], [], []
+    same, reordered, differ, only_source, only_dump, platform_added = [], [], [], [], [], []
     for rel in sorted(set(a) | set(b)):
         if rel in a and rel in b:
-            (same if normalized(a[rel]) == normalized(b[rel]) else differ).append(rel)
+            source, dumped = normalized(a[rel]), normalized(b[rel])
+            if source == dumped:
+                same.append(rel)
+            elif line_multiset(source) == line_multiset(dumped):
+                reordered.append(rel)
+            else:
+                differ.append(rel)
         elif rel in a:
             only_source.append(rel)
         elif rel in added:
             platform_added.append(rel)
         else:
             only_dump.append(rel)
-    return {"same": same, "differ": differ, "only_source": only_source, "only_dump": only_dump,
-            "platform_added": platform_added}
+    return {"same": same, "reordered": reordered, "differ": differ, "only_source": only_source,
+            "only_dump": only_dump, "platform_added": platform_added}
 
 
 def loop_steps(ib_ready: bool) -> tuple:
@@ -254,7 +270,7 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
               "tool_counts_source": {}, "tool_counts_dump": {}, "tool_counts_error": "",
               "diff_files": {}, "diagnostics": [], "diagnostics_by_step": {},
               "diagnostic_findings": [], "step_problems": [], "steps": [], "rights": {},
-              "reason": ""}
+              "rights_immobility": {}, "reason": ""}
 
     def finish(code: int) -> tuple:
         _write(out_json, report)
@@ -340,6 +356,9 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
     report["layout_dump"] = layout.layout_counts(dump_dir, ignore=PLATFORM_ADDED_FILES)
     report["layout_compare"] = layout.compare_expected(report["layout_source"], report["layout_dump"])
     report["diff_files"] = file_diff(cfg, dump_dir)
+    # 3b. Неподвижность прав: чем заполнен исходник, тем обязана остаться загруженная база.
+    #     Наблюдение gate-05: 8 блоков / 43 права в исходнике против 6 блоков / 19 прав в выгрузке.
+    report["rights_immobility"] = rights.immobile(cfg, dump_dir, rights.load_canon(opts.get("canon")))
 
     # Числа инструмента — замер покрытия инструментов, не доказательство сборки: читатель не
     # видит часть папок, поэтому недоступный читатель не должен ломать гейт.
@@ -382,6 +401,18 @@ def run(cfg_dir: str, out_json: str, opts: dict | None = None) -> tuple:
                             + json.dumps({"only_source": report["diff_files"]["only_source"],
                                           "only_dump": report["diff_files"]["only_dump"]},
                                          ensure_ascii=False))
+        return finish(1)
+    immobility = report["rights_immobility"]
+    if immobility["code"] == 2:
+        report["reason"] = "неподвижность прав не проверена: " + "; ".join(immobility["problems"])
+        return finish(2)
+    if immobility["code"] == 1:
+        report["reason"] = ("состав прав выгрузки не совпадает с исходником ("
+                            + json.dumps(immobility["counts"], ensure_ascii=False)
+                            + " — блоки/права исходника/выгрузки): "
+                            + "; ".join(immobility["problems"][:6])
+                            + " — платформу об этом не спросить повторно, поэтому формулировка "
+                              "«права роли настроены» без этой сверки не допускается")
         return finish(1)
     if report["diagnostic_findings"]:
         report["reason"] = ("платформа сообщила о проблеме, не вернув ненулевого кода: "
