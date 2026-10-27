@@ -10,7 +10,7 @@ import json
 import pathlib
 import sys
 
-LOCAL_KEYS = ("bin", "ib", "cfg", "dump", "work", "p1c", "spikes")
+LOCAL_KEYS = ("bin", "ib", "cfg", "dump", "work", "p1c", "spikes", "epf")
 KNOWN_PREFIXES = ("corpora_",)
 
 
@@ -20,7 +20,8 @@ def load_local(path_json) -> dict:
     Имена ключей проверяются: опечатка в имени пути превращается в отказ запуска платформы
     с непонятной причиной, поэтому неизвестный ключ сообщается в stderr, а не проглатывается.
     Кроме точных имён `LOCAL_KEYS` допускаются группы `corpora_*` (корпуса выгрузок нужны
-    замерам покрытия и их заведомо больше одного).
+    замерам покрытия и их заведомо больше одного). `epf` — бинарный файл внешней обработки,
+    он нужен замеру формы команд выгрузки/загрузки (`probe/epf_roundtrip.py`).
     """
     path = pathlib.Path(path_json)
     if not path.is_file():

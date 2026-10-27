@@ -208,6 +208,22 @@ VARIANT_COMMAND = {
     # Та же команда без аргумента: по контролю `load-noarg` («Файл не обнаружен ''») это различает
     # «имя команды распознано, но аргумента нет» и «имя команды не распознано молча».
     "extproc-noarg": ("DESIGNER", ["/LoadExternalDataProcessorOrReportFromFiles"]),
+    # Наблюдение `extproc-file`/`extproc-noarg` показало: команда читает аргумент (печатает
+    # «Файл 'file://<путь>' не является файлом обработки или отчета»), а при отсутствии
+    # аргументов печатает мусорные строки в обеих — «Корневой файл выгрузки» и «Целевой каталог
+    # или файл». Значит аргумента два, и их наличие платформа не проверяет.
+    "extproc-twoargs": ("DESIGNER", ["/LoadExternalDataProcessorOrReportFromFiles",
+                                     SCRIPT_ARG, BADDIR_ARG]),
+    # Обратная команда — выгрузка внешней обработки/отчёта в файлы. Печатные строки платформы
+    # подписывают аргументы по позициям: arg1 -> «Каталог или корневой файл выгрузки»,
+    # arg2 -> «Входной бинарный файл» (замер `reports/exec-14-dumpproc-args.json`, где arg1 —
+    # файл программы, arg2 — несуществующий каталог). Подтверждённая рабочая форма
+    # `/DumpExternalDataProcessorOrReportToFiles <каталог или корневой файл выгрузки>
+    # <входной бинарный файл .epf>` с кодом 0 — в замере `probe/epf_roundtrip.py`
+    # (`reports/epf-15-roundtrip.json`); обратный порядок даёт «... является путем к директории,
+    # в то время как ожидается путь к файлу».
+    "dumpproc-args": ("DESIGNER", ["/DumpExternalDataProcessorOrReportToFiles",
+                                   SCRIPT_ARG, BADDIR_ARG]),
     "jobs-allow": ("DESIGNER", ["/AllowExecuteScheduledJobs"]),
     # Тот же `/RunScript`, но в режиме `1С:Предприятие`: различие только в режиме запуска.
     "enterprise-runscript": ("ENTERPRISE", ["/RunScript", SCRIPT_ARG]),
@@ -418,6 +434,18 @@ def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
     }
 
 
+def ladder_ok(report: dict) -> bool:
+    """Лестница выдержана: на каждом шаге ровно одна позиция тройки и ровно одна часть формы команды.
+
+    Состав исходов (зависание, пустой или непустой `/Out`) в код возврата не входит: код отвечает
+    только за дисциплину наблюдения, а исходы живут в ключах отчёта (`confirmed_modes`,
+    `negative_clean`, `test_classes`). Иначе находка класса «имя принято, но процесс зависает»
+    ломала бы код лестницы, на которой эту находку сделали.
+    """
+    return bool(report.get("ladder_single_variable")) and bool(
+        report.get("ladder_single_command_part", True))
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local", default=str(ROOT / "local.paths.json"))
@@ -612,12 +640,15 @@ def main(argv: list | None = None) -> int:
     if args.controls:
         return 0 if report["controls_distinct"] else 1
     if args.negative:
-        return 0 if report["negative_clean"] else 1
+        # Код отвечает за дисциплину лестницы, а не за состав исходов: наблюдение `bogus-dash`
+        # (зависание 40 с) — это находка, она живёт в ключе `negative_clean`, а не в коде.
+        return 0 if ladder_ok(report) else 1
     if args.auth or args.test:
         # Наблюдение этих лестниц не имеет «правильного» исхода: код говорит только о том, что
         # лестница выдержана (одно изменение на шаг). Состав наблюдения — в JSON-отчёте.
-        return 0 if report["ladder_single_variable"] else 1
-    return 0 if executed else 1
+        return 0 if ladder_ok(report) else 1
+    report["execution_confirmed"] = bool(executed)
+    return 0 if ladder_ok(report) else 1
 
 
 # Контрольные прогоны. Наблюдение `--programs` показало: `runscript` даёт код 1 за 2.0 с и пустой
