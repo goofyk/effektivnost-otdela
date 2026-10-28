@@ -22,15 +22,27 @@
    одинаково объясняется и «режим не принят», и «файл программы не прочитан»).
 5. Лестница — тройка (вариант, текст программы, кодирование), и соседние шаги различаются ровно
    одной позицией: иначе прогон не отвечает ни на какой вопрос (так было у пары «режим +
-   кодирование» в одном шаге). У лестниц команд (`AUTH_LADDER`, `TEST_LADDER`) дополнительно
-   проверяется, что сдвиг варианта затрагивает ровно одну часть формы команды.
+   кодирование» в одном шаге). У лестниц команд (`AUTH_LADDER`, `TEST_LADDER`, лестницы
+   модификаторов Task 16) дополнительно проверяется, что сдвиг варианта затрагивает ровно одну
+   часть формы команды и ровно ОДИН её токен; шаг с двумя токенами допустим только если он
+   зафиксирован в `TOKEN_MULTI_REASON` (смена способа входа — один измеренный способ, два ключа
+   таблицы имён).
 6. Контрольные прогоны (`CONTROLS`) существуют: наблюдение `runscript` неотличимо от «команда
    не принята», пока нет прогона на команде с известным исходом.
+7. Лестницы модификаторов (Task 16: `PREDEFINED_LADDER`, `EXTENSION_LADDER`, `LOADOPTS_LADDER`,
+   `UPDATE_LADDER`): значения модификаторов берутся из измеренных множеств (`PREDEFINED_VALUES` —
+   замер свойства `PredefinedDataUpdate` в корпусах, `FORMAT_VALUES` — подписанные корпусом
+   значения `-Format`), а не придумываются. Варианты, способные изменить состояние ИБ, перечислены
+   в `MUTATING_VARIANTS`: они не входят в `--all` и без `--allow-mutating` не запускаются (код 2).
+8. Предсказания записаны в `PREDICTIONS` до прогона и имеют проверяемый источник — файл корпуса с
+   цитируемой строкой или отчёт контура с названным ключом.
 """
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -46,11 +58,15 @@ BIN, IB, CFG = "1cv8.exe", "ib-effektivnost", "cfg-effektivnost"
 SCRIPT = pathlib.Path("work/exec_program.txt")
 
 
-def argv(variant: str) -> list:
-    """argv варианта с фиксированными путями (платформу не запускаем)."""
+def argv(variant: str, loadlist: str = "work/exec_loadlist.txt") -> list:
+    """argv варианта с фиксированными путями (платформу не запускаем).
+
+    `loadlist` подставлен фиксированным именем: у варианта `-listFile <файл>` аргумент обязан быть
+    непустым, иначе наблюдение сравнивает «опция без значения» с «опция со значением» неверно.
+    """
     out = pathlib.Path("work/exec_out.txt")
     return exec_probe.variant_argv(variant, BIN, IB, SCRIPT, out, pathlib.Path("marker.txt"),
-                                   CFG, pathlib.Path("work"))
+                                   CFG, pathlib.Path("work"), loadlist)
 
 
 class TestArgvShape(unittest.TestCase):
@@ -69,8 +85,18 @@ class TestArgvShape(unittest.TestCase):
         `p1c.test.run.command()`) — дефект, и в этой таблице он не воспроизводится."""
         for variant in exec_probe.VARIANTS:
             signature = exec_probe.variant_signature(variant)
-            self.assertIn(signature["mode"], ("DESIGNER", "ENTERPRISE"), variant)
+            self.assertIn(signature["mode"], sorted(exec_probe.LAUNCH_MODES), variant)
             self.assertLessEqual(len(signature["names"]), 1, f"{variant}: больше одной команды")
+
+    def test_launch_modes_are_documented_by_origin(self):
+        """Каждый разрешённый режим имеет источник: прогон контура или цитату корпуса. Режим,
+        источник которого не записан, наблюдением не считается (`CONFIG` взят из макета
+        обновления корпуса УХ, а не выдуман)."""
+        for mode, origin in exec_probe.LAUNCH_MODES.items():
+            self.assertTrue(origin.strip(), mode)
+        for variant in exec_probe.VARIANTS:
+            mode = exec_probe.variant_signature(variant)["mode"]
+            self.assertIn(mode, exec_probe.LAUNCH_MODES, f"{variant}: режим {mode}")
 
     def test_variants_without_a_command_are_named_explicitly(self):
         """Пустая команда допустима только для названных вариантов (режим без команды)."""
@@ -392,6 +418,411 @@ class TestCommandLadders(unittest.TestCase):
         missing = ROOT / "tests" / "_no-such-local-paths.json"
         self.assertEqual(exec_probe.main(["--local", str(missing), "--work", "work",
                                           "--bin", BIN, "--ib", IB, "--auth"]), 2)
+
+
+class TestModifierLadders(unittest.TestCase):
+    """Лестницы Task 16 (`--predefined`, `--extensions`, `--loadopts`, `--update`, `--modes`).
+    Отвечают за то, что шаг приписывается ровно одному изменённому токену команды."""
+
+    LADDERS = (("PREDEFINED_LADDER", exec_probe.PREDEFINED_LADDER),
+               ("EXTENSION_LADDER", exec_probe.EXTENSION_LADDER),
+               ("LOADOPTS_LADDER", exec_probe.LOADOPTS_LADDER),
+               ("UPDATE_LADDER", exec_probe.UPDATE_LADDER),
+               ("MODE_LADDER", exec_probe.MODE_LADDER))
+
+    def test_every_ladder_starts_from_the_reference_with_a_known_outcome(self):
+        """Эталонный шаг — `load-ok`: его код 0 подтверждён прогонами гейта, поэтому дальше
+        сравнение идёт с известным исходом, а не с первым попавшимся прогоном."""
+        for name, ladder in self.LADDERS:
+            self.assertEqual(ladder[0][0], "load-ok", name)
+            diffs = exec_probe.ladder_step_diffs(ladder)
+            self.assertEqual(diffs[0]["from"], "", name)
+            self.assertEqual(diffs[0]["command_tokens"], [], name)
+
+    def test_every_step_changes_exactly_one_command_token(self):
+        for name, ladder in self.LADDERS:
+            for step in exec_probe.ladder_step_diffs(ladder)[1:]:
+                tokens = step["command_tokens"]
+                self.assertEqual(len(tokens), 1,
+                                 f"{name}: {step['from']} -> {step['to']} меняет {tokens}")
+                # Изменённая часть формы команды — ровно одна, и она же стоит в токене.
+                self.assertEqual(step["changed_command"], [tokens[0]["part"]],
+                                 f"{name}: {step['from']} -> {step['to']}")
+
+    def test_ladder_steps_change_exactly_one_triple_position(self):
+        for name, ladder in self.LADDERS:
+            for previous, current in zip(ladder, ladder[1:]):
+                changed = [index for index in range(3) if previous[index] != current[index]]
+                self.assertEqual(len(changed), 1, f"{name}: {previous} -> {current}")
+
+    def test_modifier_ladders_have_no_multi_token_step(self):
+        """Исключения `TOKEN_MULTI_REASON` (смена способа входа) в этих лестницах не нужны: там
+        меняется одно имя флага или одно его значение."""
+        for name, ladder in self.LADDERS:
+            pairs = {(step["from"], step["to"])
+                     for step in exec_probe.ladder_step_diffs(ladder)[1:]}
+            self.assertFalse(pairs & set(exec_probe.TOKEN_MULTI_REASON), name)
+
+    def test_multi_token_steps_of_every_ladder_are_documented(self):
+        """Ни необъяснённого шага с двумя токенами, ни устаревшей записи исключения."""
+        all_ladders = (exec_probe.SWEEP, exec_probe.PROGRAM_LADDER, exec_probe.CONTROLS,
+                       exec_probe.NEGATIVE_LADDER, exec_probe.AUTH_LADDER, exec_probe.TEST_LADDER,
+                       *(ladder for _name, ladder in self.LADDERS))
+        used = set()
+        for ladder in all_ladders:
+            for step in exec_probe.ladder_step_diffs(ladder)[1:]:
+                if len(step["command_tokens"]) > 1:
+                    pair = (step["from"], step["to"])
+                    self.assertIn(pair, exec_probe.TOKEN_MULTI_REASON,
+                                  f"{pair}: {step['command_tokens']}")
+                    used.add(pair)
+        self.assertEqual(used, set(exec_probe.TOKEN_MULTI_REASON),
+                         "запись `TOKEN_MULTI_REASON` не встречается ни в одной лестнице")
+
+    def test_mode_ladder_changes_only_the_launch_mode(self):
+        """`load-ok` -> `config-load-ok`: команда и аргументы те же, сдвигается только режим.
+        Без этой лестницы вариант `config-load-ok` не доставался бы ни одним прогоном."""
+        step = exec_probe.ladder_step_diffs(exec_probe.MODE_LADDER)[1]
+        self.assertEqual(step["changed_command"], ["mode"])
+        self.assertEqual(step["command_tokens"],
+                         [{"part": "mode", "position": 0, "from": "DESIGNER", "to": "CONFIG"}])
+        reference = exec_probe.variant_signature("load-ok")
+        config = exec_probe.variant_signature("config-load-ok")
+        self.assertEqual(config["mode"], "CONFIG")
+        for part in ("names", "args", "tail"):
+            self.assertEqual(config[part], reference[part], part)
+
+    def test_update_ladder_ends_on_the_canonical_config_form(self):
+        """Канон макета обновления корпуса: `/UpdateDBCfg -server`, CONFIG-форма — в УХ-версии."""
+        signatures = [exec_probe.variant_signature(variant)
+                      for variant, _kind, _encoding in exec_probe.UPDATE_LADDER]
+        self.assertEqual([item["mode"] for item in signatures],
+                         ["DESIGNER"] * (len(signatures) - 1) + ["CONFIG"])
+        self.assertEqual(signatures[-1]["names"], ("/UpdateDBCfg",))
+        self.assertEqual(signatures[-1]["tail"], ("-Server",))
+        self.assertIn("CONFIG", exec_probe.LAUNCH_MODES)
+
+    def test_each_ladder_is_named_by_its_own_option(self):
+        """Наблюдение вызывают опцией, а не «как-нибудь»: иначе лестницу нельзя повторить."""
+        text = (ROOT / "scripts" / "exec_probe.py").read_text(encoding="utf-8")
+        for option in ("--predefined", "--extensions", "--loadopts", "--update", "--modes"):
+            self.assertIn(f'"{option}"', text, option)
+
+    def test_ladder_ok_answers_for_the_discipline_only(self):
+        """Код ломает только необъяснённый шаг с двумя токенами; состав исходов — в отчёте."""
+        base = {"ladder_single_variable": True, "ladder_single_command_part": True}
+        self.assertTrue(exec_probe.ladder_ok(dict(base, ladder_multi_token_documented=True)))
+        self.assertFalse(exec_probe.ladder_ok(dict(base, ladder_multi_token_documented=False)))
+
+
+class TestModifierValuesAreMeasured(unittest.TestCase):
+    """Значения модификаторов взяты из измеренных множеств: корпусных значений свойства
+    `PredefinedDataUpdate` и подписанного корпусом БСП описания опций `-Format`/`-Extension`."""
+
+    def test_predefined_values_come_from_the_corpora_measurement(self):
+        allowed = set(exec_probe.PREDEFINED_VALUES) | {exec_probe.BOGUS_VALUE}
+        variants = [item for item in exec_probe.VARIANTS if item.startswith("load-predefined")]
+        self.assertTrue(variants)
+        for variant in variants:
+            tail = exec_probe.variant_signature(variant)["tail"]
+            self.assertTrue(tail, variant)
+            self.assertEqual(tail[0].split("=", 1)[0], "/SetPredefinedDataUpdate", variant)
+            values = ([tail[0].split("=", 1)[1]] if "=" in tail[0] else list(tail[1:]))
+            for value in values:
+                self.assertIn(value, allowed, f"{variant}: значение {value} не измерено")
+
+    def test_format_values_come_from_the_canonical_description(self):
+        """Каждое измеренное значение (`Hierarchical`, `Plain`) и вымышленное прогоняются,
+        `-Format` при этом стоит после `-listFile`: канон связывает формат с частичной загрузкой."""
+        allowed = set(exec_probe.FORMAT_VALUES) | {exec_probe.BOGUS_VALUE}
+        seen = set()
+        variants = [item for item in exec_probe.VARIANTS if item.startswith("load-format")]
+        self.assertTrue(variants)
+        for variant in variants:
+            tail = list(exec_probe.variant_signature(variant)["tail"])
+            self.assertEqual(tail[0], "-listFile", variant)
+            self.assertLess(tail.index("-Format"), len(tail), variant)
+            if len(tail) > tail.index("-Format") + 1:
+                value = tail[tail.index("-Format") + 1]
+                self.assertIn(value, allowed, f"{variant}: значение {value} не измерено")
+                seen.add(value)
+        self.assertEqual(seen, allowed, "лестница обязана прогнать каждое измеренное значение")
+
+    def test_extension_argument_is_a_placeholder_or_the_bogus_name(self):
+        for variant in ("load-extension-flag", "load-extension-bogus-name", "load-extension-cfgdir",
+                        "load-extension-baddir", "load-allextensions-flag",
+                        "load-allextensions-baddir"):
+            tail = list(exec_probe.variant_signature(variant)["tail"])
+            self.assertIn(tail[0], ("-Extension", "-AllExtensions"), variant)
+            for value in tail[1:]:
+                self.assertIn(value, (exec_probe.CFG_ARG, exec_probe.BADDIR_ARG,
+                                      exec_probe.BOGUS_EXTENSION_NAME),
+                              f"{variant}: значение {value} не измерено")
+
+    def test_files_value_is_a_measured_root_file_name(self):
+        """`Configuration.xml` — имя корневого файла выгрузки (замер раскладки), а не придуманное."""
+        self.assertEqual(exec_probe.LOAD_FILE_ARG, "Configuration.xml")
+        for variant in ("load-files-onefile", "load-listfile-onefile"):
+            self.assertIn(exec_probe.LOAD_FILE_ARG,
+                          exec_probe.variant_signature(variant)["tail"], variant)
+
+    def test_bogus_values_are_absent_from_the_measured_sets(self):
+        """Вымышленное значение обязано быть вымышленным: иначе отрицательный контроль внутри
+        лестницы совпадает с настоящим значением и ничего не различает."""
+        self.assertNotIn(exec_probe.BOGUS_VALUE, exec_probe.PREDEFINED_VALUES)
+        self.assertNotIn(exec_probe.BOGUS_VALUE, exec_probe.FORMAT_VALUES)
+        self.assertNotIn(exec_probe.BOGUS_EXTENSION_NAME, exec_probe.PREDEFINED_VALUES)
+        self.assertNotIn(exec_probe.BOGUS_EXTENSION_NAME, exec_probe.PLACEHOLDER_ARGS)
+
+    def test_measured_sets_are_non_empty_and_without_duplicates(self):
+        for values in (exec_probe.PREDEFINED_VALUES, exec_probe.FORMAT_VALUES):
+            self.assertTrue(values)
+            self.assertEqual(len(values), len(set(values)))
+
+    def test_tail_placeholders_are_substituted_too(self):
+        """Метки подставляют и в хвост, а не только в шаблон команды: иначе модификатор нельзя
+        передать вовсе (`-Extension cfg`, `-listFile listfile`, `-Format` без значения)."""
+        flags = argv("load-extension-cfgdir")
+        self.assertIn(CFG, flags)
+        self.assertNotIn(exec_probe.CFG_ARG, flags)
+        flags = argv("load-listfile-ok")
+        self.assertNotIn(exec_probe.LIST_ARG, flags)
+        self.assertIn("work/exec_loadlist.txt", flags)
+
+
+class TestMutatingVariants(unittest.TestCase):
+    """Варианты, способные изменить состояние ИБ: названы, отделены от `--all`, достигаются
+    названной лестницей и без `--allow-mutating` не запускаются."""
+
+    NAMED_LADDERS = (exec_probe.PREDEFINED_LADDER, exec_probe.EXTENSION_LADDER,
+                     exec_probe.LOADOPTS_LADDER, exec_probe.UPDATE_LADDER, exec_probe.MODE_LADDER)
+
+    def test_mutating_variants_are_launch_variants(self):
+        self.assertTrue(set(exec_probe.MUTATING_VARIANTS) <= set(exec_probe.VARIANTS))
+        self.assertEqual(len(exec_probe.MUTATING_VARIANTS), len(set(exec_probe.MUTATING_VARIANTS)))
+        for variant in exec_probe.MUTATING_VARIANTS:
+            self.assertTrue(exec_probe.variant_signature(variant)["names"], variant)
+
+    def test_observation_variants_exclude_them(self):
+        observation = set(exec_probe.all_observation_variants())
+        self.assertFalse(observation & set(exec_probe.MUTATING_VARIANTS))
+        self.assertEqual(observation | set(exec_probe.MUTATING_VARIANTS), set(exec_probe.VARIANTS))
+        self.assertEqual(len(observation),
+                         len(exec_probe.VARIANTS) - len(exec_probe.MUTATING_VARIANTS))
+
+    def test_every_mutating_variant_is_reachable_by_a_named_ladder(self):
+        """mutating-вариант вне названной лестницы — наблюдение, которое нельзя вызвать: он обязан
+        быть достижим явной опцией (так появился `MODE_LADDER` для `config-load-ok`)."""
+        reachable = {variant for ladder in self.NAMED_LADDERS for variant, _k, _e in ladder}
+        self.assertEqual(set(exec_probe.MUTATING_VARIANTS) - reachable, set(),
+                         "есть mutating-вариант, который ни одна лестница не прогоняет")
+
+    def test_load_variants_outside_the_set_have_a_written_reason(self):
+        loads = {variant for variant in exec_probe.VARIANTS
+                 if variant.startswith("load") and variant not in exec_probe.MUTATING_VARIANTS}
+        self.assertTrue(loads)
+        unreasoned = loads - set(exec_probe.NON_MUTATING_LOAD_REASONS)
+        self.assertEqual(unreasoned, set(),
+                         "утверждение «состояние не меняется» нигде не записано")
+        for variant in sorted(loads):
+            self.assertTrue(exec_probe.NON_MUTATING_LOAD_REASONS[variant].strip(), variant)
+
+    def test_written_reasons_do_not_cover_mutating_variants(self):
+        self.assertFalse(set(exec_probe.NON_MUTATING_LOAD_REASONS) & set(exec_probe.MUTATING_VARIANTS))
+
+    def test_reasons_are_distinct_from_the_variants_they_explain(self):
+        """Причина — предложение, а не пересказ имени варианта: иначе запись ничего не добавляет."""
+        for variant, reason in exec_probe.NON_MUTATING_LOAD_REASONS.items():
+            self.assertGreater(len(reason), len(variant), variant)
+
+    def test_main_refuses_mutating_ladders_without_the_allow_flag(self):
+        missing = ROOT / "tests" / "_no-such-local-paths.json"
+        calls = []
+
+        def stub(argv_line, **kwargs):
+            calls.append(list(argv_line))
+            raise AssertionError("без --allow-mutating платформу запускать нельзя")
+
+        original = exec_probe.subprocess.Popen
+        exec_probe.subprocess.Popen = stub
+        try:
+            for option in ("--predefined", "--extensions", "--loadopts", "--update", "--modes"):
+                code = exec_probe.main(["--local", str(missing), "--work", "work", "--bin", BIN,
+                                        "--ib", IB, "--cfg", CFG, option])
+                self.assertEqual(code, 2, option)
+            code = exec_probe.main(["--local", str(missing), "--work", "work", "--bin", BIN,
+                                    "--ib", IB, "--cfg", CFG, "--variant", "config-load-ok"])
+            self.assertEqual(code, 2, "--variant config-load-ok")
+        finally:
+            exec_probe.subprocess.Popen = original
+        self.assertEqual(calls, [], "отказ обязан предшествовать запуску платформы")
+
+    def test_refusal_writes_nothing_into_the_work_directory(self):
+        """Отказ предшествует и записи файла списка: иначе отказавший прогон оставляет файлы."""
+        missing = ROOT / "tests" / "_no-such-local-paths.json"
+        with tempfile.TemporaryDirectory() as raw:
+            work = pathlib.Path(raw) / "work"
+            code = exec_probe.main(["--local", str(missing), "--work", str(work), "--bin", BIN,
+                                    "--ib", IB, "--cfg", CFG, "--loadopts"])
+            self.assertEqual(code, 2)
+            self.assertFalse((work / exec_probe.LOADLIST_NAME).exists())
+            self.assertFalse(work.exists() and any(work.iterdir()), "рабочий каталог остался пуст")
+
+    def test_mutating_ladders_are_named_as_mutating_in_the_cli_help(self):
+        text = (ROOT / "scripts" / "exec_probe.py").read_text(encoding="utf-8")
+        self.assertIn("--allow-mutating", text)
+        self.assertIn("MUTATING_VARIANTS", text)
+
+
+class TestLoadListFile(unittest.TestCase):
+    """Форма файла `-listFile` — канон БСП (стр. 485-488): UTF-8 без BOM, переносы `\r\n`,
+    без пустых строк, абсолютные имена корневых XML-файлов через обратный слеш."""
+
+    ROOT_FILES = ("Configuration.xml", "Catalogs/Сотрудники.xml")
+    OTHER_FILES = ("Catalogs/Сотрудники/Ext/Predefined.xml",
+                   "Catalogs/Сотрудники/Forms/ФормаСписка/Ext/Form.xml",
+                   "Catalogs/Сотрудники/Forms/ФормаСписка/Ext/Form/Module.bsl",
+                   "Ext/SessionModule.bsl")
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.cfg = pathlib.Path(self._tmp.name) / "cfg"
+        for name in self.ROOT_FILES + self.OTHER_FILES:
+            file = self.cfg / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("x", encoding="utf-8")
+        self.work = pathlib.Path(self._tmp.name) / "work"
+
+    def test_only_root_xml_files_are_listed(self):
+        """Файлы каталога `Ext/` в списке не перечисляют: их подтягивает иерархический формат
+        вместе с корневым файлом объекта (стр. 843-844 канона)."""
+        names = exec_probe.loadlist_paths(self.cfg)
+        relative = sorted(pathlib.Path(name).relative_to(self.cfg).as_posix() for name in names)
+        self.assertEqual(relative, sorted(self.ROOT_FILES))
+        for name in names:
+            self.assertTrue(pathlib.Path(name).is_absolute(), name)
+            self.assertTrue(name.endswith(".xml"), name)
+            self.assertNotIn("Ext", pathlib.Path(name).relative_to(self.cfg).parts, name)
+
+    def test_names_use_the_windows_separator(self):
+        if os.sep != "\\":
+            raise unittest.SkipTest("разделитель путей не Windows: форма имён не наблюдаема здесь")
+        for name in exec_probe.loadlist_paths(self.cfg):
+            self.assertIn("\\", name, name)
+            self.assertNotIn("/", name, name)
+
+    def test_write_loadlist_bytes_match_the_canonical_form(self):
+        path, names = exec_probe.write_loadlist(self.cfg, self.work)
+        self.assertEqual(path.name, exec_probe.LOADLIST_NAME)
+        self.assertEqual(path.parent, self.work)
+        raw = path.read_bytes()
+        self.assertFalse(raw.startswith(b"\xef\xbb\xbf"), "BOM в списке не каноничен")
+        self.assertIn(b"\r\n", raw)
+        # Одиночный `\n` в перечислении поддерживаемых переносов отсутствует.
+        lone = [index for index, byte in enumerate(raw)
+                if byte == 0x0A and (index == 0 or raw[index - 1] != 0x0D)]
+        self.assertEqual(lone, [], "одиночный перевод строки не поддерживается списком")
+        self.assertNotIn(b"\r\r", raw, "пустая строка между именами")
+        self.assertFalse(raw.startswith(b"\r") or raw.endswith(b"\r\n"), "пустой строки нет")
+        self.assertEqual(raw.decode("utf-8").split("\r\n"), names)
+
+    def test_needs_loadlist_marks_exactly_the_listfile_variants(self):
+        expected = {"load-listfile-ok", "load-format-flag", "load-format-hierarchical",
+                    "load-format-plain", "load-format-bogus"}
+        marked = {variant for variant in exec_probe.VARIANTS if exec_probe.needs_loadlist(variant)}
+        self.assertEqual(marked, expected)
+
+    def test_listfile_variants_carry_the_list_file_in_argv(self):
+        for variant in ("load-listfile-ok", "load-format-plain", "load-format-bogus"):
+            flags = argv(variant)
+            index = flags.index("-listFile")
+            self.assertEqual(flags[index + 1], "work/exec_loadlist.txt", variant)
+
+
+class TestPredictions(unittest.TestCase):
+    """Предсказания живут в таблице, записаны до прогона и имеют проверяемый источник."""
+
+    LADDER_VARIANTS = {variant for ladder in (exec_probe.PREDEFINED_LADDER,
+                                              exec_probe.EXTENSION_LADDER,
+                                              exec_probe.LOADOPTS_LADDER,
+                                              exec_probe.UPDATE_LADDER,
+                                              exec_probe.MODE_LADDER)
+                       for variant, _kind, _encoding in ladder}
+
+    def test_prediction_keys_are_steps_of_the_task16_ladders(self):
+        self.assertTrue(exec_probe.PREDICTIONS)
+        for variant in exec_probe.PREDICTIONS:
+            self.assertIn(variant, self.LADDER_VARIANTS,
+                          f"{variant}: предсказание стоит не на шаге лестницы")
+
+    def test_prediction_records_use_allowed_kinds_and_outcomes(self):
+        for variant, record in exec_probe.PREDICTIONS.items():
+            self.assertIn(record["kind"], exec_probe.PREDICTION_KINDS, variant)
+            self.assertIn(record["predicts"], exec_probe.PREDICTION_OUTCOMES, variant)
+            self.assertTrue(record["quote"].strip(), variant)
+            self.assertTrue(record["note"].strip(), variant)
+            if record["kind"] == "corpora":
+                self.assertTrue(record["needle"].strip(), variant)
+            else:
+                self.assertTrue(record["source"].startswith("reports/"), variant)
+                self.assertTrue(record["source_key"].strip(), variant)
+
+    def test_reference_prediction_comes_from_a_gate_report(self):
+        """Эталонный шаг предсказан отчётом контура: `load_code` = 0 (гейт итерации 5)."""
+        record = exec_probe.PREDICTIONS["load-ok"]
+        self.assertEqual(record["kind"], "kontur")
+        self.assertEqual(record["predicts"], "code0")
+        self.assertEqual(record["source_key"], "load_code")
+
+    def test_corpora_source_is_a_corpus_key_and_a_relative_path(self):
+        key, relative = exec_probe.PREDICTION_SOURCE
+        self.assertTrue(key.startswith("corpora_"), key)
+        self.assertFalse(pathlib.PurePosixPath(relative).is_absolute(), relative)
+        self.assertTrue(relative.endswith(".bsl"), relative)
+
+    def test_predictions_are_not_written_during_the_run(self):
+        """Предсказание, дописанное после прогона, предсказанием не считается."""
+        text = (ROOT / "scripts" / "exec_probe.py").read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"PREDICTIONS\[[^\]]+\]\s*=[^=]", text))
+        self.assertNotIn("PREDICTIONS.update(", text)
+        self.assertNotIn("PREDICTIONS.setdefault(", text)
+
+    def test_missing_corpus_source_is_reported_as_unreadable(self):
+        with tempfile.TemporaryDirectory() as raw:
+            local = pathlib.Path(raw) / "local.paths.json"
+            local.write_text(json.dumps({"bin": BIN, "ib": IB, "cfg": CFG}), encoding="utf-8")
+            sources = exec_probe.verify_prediction_sources(str(local), pathlib.Path(raw))
+        self.assertEqual(set(sources), set(exec_probe.PREDICTIONS))
+        for variant, record in exec_probe.PREDICTIONS.items():
+            if record["kind"] == "corpora":
+                self.assertFalse(sources[variant]["file_found"], variant)
+                self.assertFalse(sources[variant]["needle_found"], variant)
+
+    def test_prediction_sources_in_this_environment_are_cited_from_readable_files(self):
+        """Источник предсказания в этом окружении — читаемый файл с цитируемым именем.
+
+        Отчёт контура (`reports/gate-11.json`) в репозиторий не попадает: его отсутствие означает
+        отсутствие прогона в этом окружении, а не отсутствие источника.
+        """
+        local = ROOT / "local.paths.json"
+        if not local.is_file():
+            raise unittest.SkipTest("нет local.paths.json: корпуса и отчёты контура недоступны")
+        sources = exec_probe.verify_prediction_sources(str(local), ROOT)
+        for variant, value in sorted(sources.items()):
+            record = exec_probe.PREDICTIONS[variant]
+            if record["kind"] == "kontur":
+                if not value["file_found"]:
+                    continue
+                self.assertTrue(value["needle_found"],
+                                f"{variant}: ключ {record['source_key']} не равен 0 в "
+                                f"{value['source']}")
+            else:
+                self.assertTrue(value["file_found"],
+                                f"{variant}: файл корпуса {value['source']} не читается")
+                self.assertTrue(value["needle_found"],
+                                f"{variant}: цитируемое имя {record['needle']} не найдено в "
+                                f"{value['source']}")
 
 
 class TestNegativeControls(unittest.TestCase):

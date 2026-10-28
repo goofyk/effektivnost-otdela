@@ -51,15 +51,59 @@ BSL: начальные данные, тесты и отчёт нельзя пр
   (внешняя обработка из файлов, очередь фоновых заданий), плюс сравнение режима запуска
   `DESIGNER`/`ENTERPRISE` как единственной переменной первого шага.
 
-    python scripts/exec_probe.py --variant runscript
-    python scripts/exec_probe.py --variant runscript-authoff --json reports/exec-runscript.json
-    python scripts/exec_probe.py --all --json reports/exec-all.json
-    python scripts/exec_probe.py --sweep --json reports/exec-12-sweep.json
-    python scripts/exec_probe.py --programs --timeout 40 --json reports/exec-12-programs.json
-    python scripts/exec_probe.py --controls --timeout 60 --json reports/exec-12-controls.json
-    python scripts/exec_probe.py --negative --timeout 60 --json reports/exec-12-negative.json
-    python scripts/exec_probe.py --auth --timeout 40 --json reports/exec-13-auth.json
-    python scripts/exec_probe.py --test --timeout 30 --json reports/exec-13-test.json
+Лестницы модификаторов `/LoadConfigFromFiles`, режимов обновления и режимов запуска (Task 16). Все
+они начинаются с заведомо рабочего шага `load-ok` (гейт подтверждает код 0) и дальше меняют только
+хвост команды или только режим запуска, поэтому исход каждого шага приписывается ровно одному
+изменённому токену (`command_tokens` в `ladder_diffs`, ключ отчёта `ladder_single_command_token`):
+
+* `--predefined` — `/SetPredefinedDataUpdate`: форма с `=` и форма с отдельным значением, затем
+  значения `Auto`, `AutoUpdate`, `DontAutoUpdate` (замер значений свойства в корпусах) и вымышленное
+  значение. Отвечает на вопрос, читает ли вообще платформа этот модификатор;
+* `--extensions` — `-Extension`, `-AllExtensions`, `-RebuildConfigurationExtensions`,
+  `/CheckCanApplyConfigurationExtensions`; смысл опций подписан корпусом БСП (запись `PREDICTIONS`);
+* `--loadopts` — `-files`, `-listFile`, `-Format` (`Hierarchical`/`Plain`): частичная загрузка по
+  списку файлов. Файл списка пишет `write_loadlist` в канонической форме (UTF-8, имена через
+  перенос; список — абсолютные пути корневых XML-файлов, стр. 843-844 канона);
+* `--update` — `/UpdateCfg`, `/UpdateDBCfg`, модификатор `-Server` и режим запуска `CONFIG`
+  (CONFIG-форма того же канонического макета обновления в УХ);
+* `--modes` — режим запуска как единственная переменная: `DESIGNER` (`load-ok`, код 0 подтверждён
+  прогонами гейта) -> `CONFIG` (`config-load-ok`, ровно та же команда загрузки). Отвечает на вопрос,
+  принимает ли канонический CONFIG-режим макета обновления (`CONFIG {0} {1} /UpdateDBCfg -server`)
+  команду `/LoadConfigFromFiles` так же, как `DESIGNER`. Без этого шага вариант `config-load-ok` не
+  был бы достижим ни одной названной лестницей и остался бы «вне наблюдения».
+
+Эти лестницы способны изменить состояние ИБ (загрузить конфигурацию целиком или по списку, создать
+расширение, сменить режим обновления предопределённых данных, обновить конфигурацию или структуру
+базы, загрузить конфигурацию в режиме `CONFIG`). Такие варианты перечислены в `MUTATING_VARIANTS`, не
+входят в `--all` (`all_observation_variants`), и без `--allow-mutating` не запускаются вовсе (код 2).
+Прогонывать их можно только на отдельной временной ИБ, созданной `scripts/ib_loop.py create`, а не на
+ИБ гейта.
+
+Предсказания (`PREDICTIONS`) записаны до прогона и имеют проверяемый источник: файл корпуса из
+`local.paths.json` с цитируемым именем или отчёт контура с названным ключом; читаемость источника
+проверяет `verify_prediction_sources`, а не человек. Сбывшееся предсказание требует кода возврата:
+у зависшего прогона кода нет, поэтому он идёт в `predictions_unresolved`, а не в опровергнутые.
+
+     python scripts/exec_probe.py --variant runscript
+     python scripts/exec_probe.py --variant runscript-authoff --json reports/exec-runscript.json
+     python scripts/exec_probe.py --all --json reports/exec-all.json
+     python scripts/exec_probe.py --sweep --json reports/exec-12-sweep.json
+     python scripts/exec_probe.py --programs --timeout 40 --json reports/exec-12-programs.json
+     python scripts/exec_probe.py --controls --timeout 60 --json reports/exec-12-controls.json
+     python scripts/exec_probe.py --negative --timeout 60 --json reports/exec-12-negative.json
+     python scripts/exec_probe.py --auth --timeout 40 --json reports/exec-13-auth.json
+     python scripts/exec_probe.py --test --timeout 30 --json reports/exec-13-test.json
+     # Лестницы модификаторов: только на отдельной временной ИБ и только с --allow-mutating
+     python scripts/exec_probe.py --predefined --allow-mutating --timeout 90 \
+         --json reports/exec-16-predefined.json
+     python scripts/exec_probe.py --extensions --allow-mutating --timeout 90 \
+         --json reports/exec-16-extensions.json
+     python scripts/exec_probe.py --loadopts --allow-mutating --timeout 90 \
+         --json reports/exec-16-loadopts.json
+     python scripts/exec_probe.py --update --allow-mutating --timeout 90 \
+         --json reports/exec-16-update.json
+     python scripts/exec_probe.py --modes --allow-mutating --timeout 90 \
+         --json reports/exec-16-modes.json
 """
 from __future__ import annotations
 
@@ -168,8 +212,35 @@ def prepare_script(work: pathlib.Path, variant: str, label: str, program: str,
 
 
 # Аргументы команды наблюдения, которые подставляет `variant_argv`: каталог конфигурации
-# (`--cfg`), файл BSL-программы прогона и несуществующий каталог (контроль `load-baddir`).
-CFG_ARG, SCRIPT_ARG, BADDIR_ARG = "cfg", "script", "baddir"
+# (`--cfg`), файл BSL-программы прогона, несуществующий каталог (контроль `load-baddir`) и файл
+# списка загрузки (`-listFile`). Метки подставляются и в шаблон команды, и в хвост варианта:
+# `-Extension <имя>`, `-listFile <файл>`, `-Format <значение>`. Иначе лестница не могла бы менять
+# значение хвоста отдельным шагом, а тест требует ровно одной изменённой части формы команды.
+CFG_ARG, SCRIPT_ARG, BADDIR_ARG, LIST_ARG = "cfg", "script", "baddir", "listfile"
+PLACEHOLDER_ARGS = (CFG_ARG, SCRIPT_ARG, BADDIR_ARG, LIST_ARG)
+LOADLIST_NAME = "exec_loadlist.txt"
+
+# Имя корневого файла каталога конфигурации: оно измерено раскладкой (класс `configuration` в
+# `scripts/layout.py`, проверка `corpora._looks_like_dump`) и есть в каждой выгрузке
+# конфигуратора, поэтому служит значением `-files` как измеренное, а не придуманное.
+LOAD_FILE_ARG = "Configuration.xml"
+
+# Значения `-Format` взяты из канонического описания опций `/LoadConfigFromFiles` в БСП
+# (запись `PREDICTIONS`): `Hierarchical` (по умолчанию) и `Plain`.
+FORMAT_VALUES = ("Hierarchical", "Plain")
+
+# Значения `/SetPredefinedDataUpdate` взяты из замера значений свойства `PredefinedDataUpdate`
+# в корпусах (`docs/evidence/corpora-predefined-samples.md`: Auto 286, DontAutoUpdate 41,
+# AutoUpdate 10). Канонного употребления самого имени в командной строке корпуса не дают
+# (обход `probe/corpora_cli_usage.py`, отчёт `reports/corpora-cli-usage-16.json`: 242 233
+# прочитанных файла, 0 вхождений `SetPredefinedDataUpdate`),
+# поэтому замер значений свойства — единственный доступный источник этих значений.
+PREDEFINED_VALUES = ("Auto", "AutoUpdate", "DontAutoUpdate")
+
+# Отрицательные значения внутри лестниц: имя флага принято, но его значение вымышлено. Если итог
+# совпадает с итогом при настоящем значении, платформа значение не проверяет вовсе.
+BOGUS_VALUE = "ZzzNetakogoZnacheniyaNet"
+BOGUS_EXTENSION_NAME = "ZzzNetakogoRasshireniyaNet"
 
 # Вариант наблюдения -> (режим запуска, команда с аргументом). Имена команд взяты из замера
 # `p1c/src/p1c/data/test_cli_flags.json`; варианта без имени команды нет: платформа без команды
@@ -184,6 +255,74 @@ VARIANT_COMMAND = {
     "load-allusers": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
     "load-currentuser": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
     "load-credentials": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    # Модификаторы `/LoadConfigFromFiles` (группы `--predefined`, `--extensions`, `--loadopts`).
+    # Их смысл взят не из догадок, а из канонического описания опций в корпусе БСП (SSL): стр.
+    # 469–492 файла `DataProcessors/ВстраиваниеПодсистемыРаботаСФайлами/Forms/Форма/Ext/Form/
+    # Module.bsl`, дословные цитаты — `docs/evidence/cli-canonical-usage.md`:
+    #   стр. 473–475 «Extension <Имя расширения> - обработка расширения с указанным именем.
+    #     Если расширение успешно обработано возвращает код возврата 0. В противном случае (если
+    #     расширение с указанным именем не существует или в процессе работы произошли ошибки) - 1.»
+    #   стр. 476–479 «AllExtensions - загрузка только расширений (всех). Если требуемое
+    #     расширение не существует, оно будет создано. ... При попытке загрузить расширение в
+    #     основную конфигурацию или наоборот, будет выведена ошибка.»
+    #   стр. 480–483 «files - содержит список файлов, которые требуется загрузить. Список
+    #     разделяется запятыми. Не используется, если указана опция-listfile.» (и наоборот для
+    #     `listfile`); стр. 485–488 — файл списка: кодировка UTF-8, имена через перенос строки,
+    #     без пустых строк между именами; стр. 489–492 «format ... По умолчанию загрузка
+    #     производится в иерархическом формате: Hierarchical ... Plain».
+    # Там же (стр. 494–512) собрана команда: `DESIGNER /IBConnectionString <иб> /N <пользователь>
+    # /P <пароль> /LoadConfigFromFiles <каталог> -listFile <файл списка> /Out <файл>
+    # /DisableStartupMessages /DisableStartupDialogs`, и та же команда пишется в `load.cmd`
+    # (стр. 514–517) как способ ручной загрузки.
+    # Модификатор режима обновления предопределённых данных (`--predefined`). Имя команды остаётся
+    # заведомо рабочим, меняется только хвост: `/SetPredefinedDataUpdate` — единственное измеренное
+    # имя, содержащее `Predefined` (замер 426 имён). Канонного употребления этого имени корпуса не
+    # дают (обход `probe/corpora_cli_usage.py`: 0 вхождений), поэтому лестница проверяет и имя, и
+    # форму (`<имя> <значение>` против `<имя>=<значение>`), а значения берёт из замера значений
+    # свойства `PredefinedDataUpdate` в корпусах.
+    "load-predefined-equals-dontupdate": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-predefined-flag": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-predefined-auto": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-predefined-autoupdate": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-predefined-dontupdate": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-predefined-bogus-value": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    # Расширения конфигурации (`--extensions`): `-Extension`, `-AllExtensions`,
+    # `-RebuildConfigurationExtensions`, `/CheckCanApplyConfigurationExtensions` — все четыре имени
+    # есть в замере 426 имён (дефисная форма первых трёх). Смысл опций описан корпусом БСП
+    # (запись `PREDICTIONS`): `-Extension` берёт **имя расширения**, а не путь; `-AllExtensions`
+    # значения не берёт и создаёт недостающие расширения по подкаталогам каталога загрузки.
+    "load-extension-flag": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-extension-bogus-name": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-extension-cfgdir": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-extension-baddir": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-allextensions-baddir": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-allextensions-flag": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-rebuild-extensions": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-check-can-apply": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    # Опции частичной загрузки (`--loadopts`): `-files`, `-listFile`, `-Format` — три имени из
+    # замера 426, которые корпус БСП подписывает как опции именно `/LoadConfigFromFiles`
+    # (стр. 480–492 канонического описания выше). Для p1c это самый практичный вывод: загрузка не
+    # всей конфигурации, а перечисленных файлов.
+    "load-files-flag": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-files-onefile": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-listfile-onefile": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-listfile-ok": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-format-flag": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-format-hierarchical": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-format-plain": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "load-format-bogus": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    # Обновление конфигурации и структуры ИБ (`--update`). Канон употребления подтверждён
+    # корпусом: `Пульсар/SRC/DataProcessors/УстановкаОбновлений/Templates/
+    # МакетФайлаОбновленияКонфигурации/Ext/Template.txt` —
+    #   CONFIG <иб> /UpdateCfg "<cf|cfu>" /Out <файл> ...  (обновление конфигурации на поддержке)
+    #   CONFIG <иб> /UpdateDBCfg -Server /Out <файл> ...   (обновление конфигурации базы данных)
+    # Тот же макет использует `/LoadCfg "<cf>"` и `/IBCheckAndRepair -IBCompression`.
+    "update-cfg-noarg": ("DESIGNER", ["/UpdateCfg"]),
+    "update-dbcfg": ("DESIGNER", ["/UpdateDBCfg"]),
+    "update-dbcfg-server": ("DESIGNER", ["/UpdateDBCfg"]),
+    "config-update-dbcfg-server": ("CONFIG", ["/UpdateDBCfg"]),
+    # Тот же рабочий `/LoadConfigFromFiles` в режиме `CONFIG` — режиме макета обновления.
+    "config-load-ok": ("CONFIG", ["/LoadConfigFromFiles", CFG_ARG]),
     # Исполнение BSL-программы (Task 12).
     "runscript": ("DESIGNER", ["/RunScript", SCRIPT_ARG]),
     "runscript-noarg": ("DESIGNER", ["/RunScript"]),
@@ -245,9 +384,174 @@ VARIANT_TAIL = {
     "runscript-external": ["-ExternalConnection"],
     "execute-authoff": ["/authoff"],
     "enterprise-plain": ["/authoff"],
+    # Модификатор режима предопределённых данных: имя и значение живут в хвосте, а не в шаблоне
+    # команды. Причина: вариант наблюдения обязан нести ровно одно имя команды (тест
+    # `test_every_variant_carries_exactly_one_command`), а лестница при этом меняется одной
+    # частью формы команды — хвостом.
+    "load-predefined-flag": ["/SetPredefinedDataUpdate"],
+    "load-predefined-auto": ["/SetPredefinedDataUpdate", "Auto"],
+    "load-predefined-autoupdate": ["/SetPredefinedDataUpdate", "AutoUpdate"],
+    "load-predefined-dontupdate": ["/SetPredefinedDataUpdate", "DontAutoUpdate"],
+    "load-predefined-equals-dontupdate": ["/SetPredefinedDataUpdate=DontAutoUpdate"],
+    # Значение, которого нет в замере значений свойства: отрицательный контроль внутри лестницы.
+    "load-predefined-bogus-value": ["/SetPredefinedDataUpdate", BOGUS_VALUE],
+    "load-extension-flag": ["-Extension"],
+    # Имя расширения, которого нет: корпус предсказывает код возврата 1 (запись `PREDICTIONS`).
+    "load-extension-bogus-name": ["-Extension", BOGUS_EXTENSION_NAME],
+    "load-extension-cfgdir": ["-Extension", CFG_ARG],
+    "load-extension-baddir": ["-Extension", BADDIR_ARG],
+    # `-AllExtensions` с путём — вне описания опций (оно значения не берёт); шаг оставлен как
+    # наблюдение того, что платформа делает с лишним positional-аргументом.
+    "load-allextensions-baddir": ["-AllExtensions", BADDIR_ARG],
+    "load-allextensions-flag": ["-AllExtensions"],
+    "load-rebuild-extensions": ["-RebuildConfigurationExtensions"],
+    "load-check-can-apply": ["/CheckCanApplyConfigurationExtensions"],
+    "load-files-flag": ["-files"],
+    "load-files-onefile": ["-files", LOAD_FILE_ARG],
+    # `-listFile` с файлом, который списком файлов не является (корневой XML конфигурации):
+    # наблюдение требования «перечисление имён через перенос строки».
+    "load-listfile-onefile": ["-listFile", LOAD_FILE_ARG],
+    "load-listfile-ok": ["-listFile", LIST_ARG],
+    "load-format-flag": ["-listFile", LIST_ARG, "-Format"],
+    "load-format-hierarchical": ["-listFile", LIST_ARG, "-Format", "Hierarchical"],
+    "load-format-plain": ["-listFile", LIST_ARG, "-Format", "Plain"],
+    "load-format-bogus": ["-listFile", LIST_ARG, "-Format", BOGUS_VALUE],
+    # `-Server` (имя из замера) — форма канонического макета обновления: `/UpdateDBCfg -server`.
+    "update-dbcfg-server": ["-Server"],
+    "config-update-dbcfg-server": ["-Server"],
 }
 
+# Варианты, которые могут изменить состояние ИБ: обновить конфигурацию или структуру базы данных,
+# создать или применить расширение, загрузить конфигурацию частично (не все файлы) либо сменить
+# режим обновления предопределённых данных. В `--all` они не входят: `--all` обязан оставаться
+# наблюдением без побочных изменений. Лестница, которая их прогоняет, названа явно (`--predefined`,
+# `--extensions`, `--loadopts`, `--update`), требует `--allow-mutating` и идёт на отдельной
+# временной ИБ, а не на ИБ гейта.
+MUTATING_VARIANTS = (
+    "load-predefined-equals-dontupdate", "load-predefined-flag", "load-predefined-auto",
+    "load-predefined-autoupdate", "load-predefined-dontupdate", "load-predefined-bogus-value",
+    "load-extension-flag", "load-extension-bogus-name", "load-extension-cfgdir",
+    "load-extension-baddir", "load-allextensions-baddir", "load-allextensions-flag",
+    "load-rebuild-extensions",
+    "load-files-flag", "load-files-onefile", "load-listfile-onefile", "load-listfile-ok",
+    "load-format-flag", "load-format-hierarchical", "load-format-plain", "load-format-bogus",
+    "update-cfg-noarg", "update-dbcfg", "update-dbcfg-server", "config-update-dbcfg-server",
+    "config-load-ok",
+)
+
+# Остальные варианты группы `load-*` в `MUTATING_VARIANTS` не стоят, и причина записана здесь,
+# а не в голове наблюдателя. Эталонный `load-ok` (и вся лестница авторизации на той же команде)
+# перезагружает ровно ту конфигурацию, которая уже загружена в ИБ: это делает гейт на каждом
+# прогоне, и повторимость измерения подтверждена (`reports/gate-*.json`). Прогонять их можно на
+# ИБ гейта. Остальные — загрузка не начинается (аргумента нет или каталога нет) либо чтение.
+NON_MUTATING_LOAD_REASONS = {
+    "load-ok": "эталон: перезагрузка той же конфигурации, повторимость подтверждена прогонами гейта",
+    "load-authoff": "та же команда, что `load-ok`, меняется только способ входа",
+    "load-allusers": "та же команда, что `load-ok`, меняется только способ входа",
+    "load-currentuser": "та же команда, что `load-ok`, меняется только способ входа",
+    "load-credentials": "та же команда, что `load-ok`, меняется только способ входа",
+    "load-noarg": "загрузка не начинается: «Файл не обнаружен ''» (подтверждено `--controls`)",
+    "load-baddir": "загрузка не начинается: каталога нет (подтверждено `--controls`)",
+    "load-check-can-apply": "проверка возможности применить расширения: состояние не меняется; "
+                            "если наблюдение покажет обратное, вариант уедет в MUTATING_VARIANTS",
+}
+
+# Разрешённые режимы запуска и их происхождение. `DESIGNER` и `ENTERPRISE` подтверждены прогонами
+# контура; `CONFIG` — из канонического макета обновления корпуса (см. комментарий к
+# `update-cfg-noarg`), а не придуман: макет УХ пишет `CONFIG {0} {1} /UpdateDBCfg -server ...`.
+# Наблюдение корпусов (`probe/corpora_cli_usage.py`): ERP-версия того же макета пишет
+# `DESIGNER {0} {1} /UpdateDBCfg -server ...` (стр. 852), УХ-версия — `CONFIG ...` (стр. 817).
+# Оба режима каноничны; `{0}` — путь к ИБ без `/F`, `{1}` — `/N"<имя>" /P"<пароль>" /WA-`
+# (стр. 1143 макета ERP). Наш контур держит `/F <иб>`: эта форма подтверждена прогонами гейта.
+LAUNCH_MODES = {"DESIGNER": "подтверждено прогонами контура (гейт, лестницы); канон ERP-макета",
+                "ENTERPRISE": "подтверждено прогонами контура (наблюдение о окнах)",
+                "CONFIG": "канон корпуса: CONFIG-форма макета ОбновленияКонфигурации (УХ)"}
+
 VARIANTS = tuple(VARIANT_COMMAND)
+
+
+def all_observation_variants() -> tuple:
+    """`VARIANTS` без `MUTATING_VARIANTS`: из них состоит `--all`, оно не меняет состояние ИБ."""
+    return tuple(variant for variant in VARIANTS if variant not in MUTATING_VARIANTS)
+
+
+# Предсказания, записанные ДО прогона, и их источник. Смысл: лестница проверяет не «что вышло», а
+# «сбылось ли написанное разработчиком платформы». Источник обязан быть читаемым: файл корпуса из
+# `local.paths.json` (ключ `corpora_*`) или отчёт контура в `reports/`; его проверяет
+# `verify_prediction_sources`, а не мы на глаз.
+#   kind = `corpora` — цитата из файла корпуса (`PREDICTION_SOURCE`), `needle` обязана в нём
+#     встречаться; kind = `kontur` — цитата из отчёта контура (`source_key` обязан дать 0).
+#   predicts = `code0` (ожидаем код возврата 0) или `nonzero` (ожидаем не 0, зависание не считается
+#     сбывшимся предсказанием: код при зависании отсутствует).
+PREDICTION_SOURCE = ("corpora_ssl",
+                     "DataProcessors/ВстраиваниеПодсистемыРаботаСФайлами/Forms/Форма/Ext/Form/"
+                     "Module.bsl")
+PREDICTION_KINDS = ("corpora", "kontur")
+PREDICTION_OUTCOMES = ("code0", "nonzero")
+
+PREDICTIONS = {
+    "load-ok": {"kind": "kontur", "predicts": "code0", "source": "reports/gate-11.json",
+                "source_key": "load_code", "needle": "load_code",
+                "quote": "гейт: `load_code` = 0 при загрузке этой же конфигурации (5.1 с)",
+                "note": "этот шаг — эталон сравнения всех лестниц модификаторов"},
+    "load-extension-bogus-name": {"kind": "corpora", "predicts": "nonzero", "needle": "-Extension",
+                                  "quote": "«если расширение с указанным именем не существует или "
+                                           "в процессе работы произошли ошибки) - 1» (стр. 475)",
+                                  "note": "расширения с таким именем в ИБ нет"},
+    "load-allextensions-flag": {"kind": "corpora", "predicts": "nonzero", "needle": "AllExtensions",
+                                "quote": "«При попытке загрузить расширение в основную "
+                                         "конфигурацию или наоборот, будет выведена ошибка» "
+                                         "(стр. 479)",
+                                "note": "каталог загрузки — основная конфигурация, не расширение"},
+    "load-listfile-ok": {"kind": "corpora", "predicts": "code0", "needle": "listfile",
+                         "quote": "«listfile - указывает файл, в котором перечислены файлы, "
+                                  "которые требуется загрузить» (стр. 482)",
+                         "note": "файл списка содержит ровно те же 31 имя, что загружает `load-ok`"},
+    "load-format-hierarchical": {"kind": "corpora", "predicts": "code0", "needle": "format",
+                                 "quote": "«По умолчанию загрузка производится в иерархическом "
+                                          "формате: Hierarchical» (стр. 490-491)",
+                                 "note": "значение из канона БСП"},
+    "load-format-plain": {"kind": "corpora", "predicts": "code0", "needle": "Plain",
+                          "quote": "«Plain - загрузка выполняется в линейном формате» (стр. 492)",
+                          "note": "значение из канона БСП"},
+}
+
+
+def verify_prediction_sources(local_file: str, root_dir: pathlib.Path) -> dict:
+    """Каждое предсказание прочитано из источника, а не пересказано по памяти.
+
+    `root_dir` — каталог проекта: путь источника отчёта контура записан относительно него
+    (`reports/gate-11.json`), путь корпуса — относительно значения ключа `corpora_*` из
+    `local.paths.json`.
+
+    Возвращает по варианту `{source, file_found, needle_found}`: `file_found` — файл источника
+    есть, `needle_found` — в файле корпуса есть цитируемое имя (для `kontur` — отчёт есть и
+    названный ключ в нём равен 0). Предсказание без источника не считается предсказанием.
+    """
+    local = paths.load_local(local_file)
+    result = {}
+    for variant, record in sorted(PREDICTIONS.items()):
+        if record["kind"] == "corpora":
+            key, relative = PREDICTION_SOURCE
+            root = local.get(key, "")
+            path = pathlib.Path(root) / relative if root else None
+            found = bool(path and path.is_file())
+            text = path.read_text(encoding="utf-8-sig", errors="replace") if found else ""
+            result[variant] = {"source": key + "/" + relative, "file_found": found,
+                               "needle_found": record["needle"] in text}
+        else:
+            path = root_dir / record["source"]
+            found = path.is_file()
+            value = None
+            if found:
+                try:
+                    value = json.loads(path.read_text(encoding="utf-8")).get(record["source_key"])
+                except json.JSONDecodeError:
+                    value = None
+            result[variant] = {"source": record["source"], "file_found": found,
+                               "needle_found": value == 0}
+    return result
+
 
 # Варианты без имени команды: они наблюдают, что делает режим запуска без команды (режим
 # `1С:Предприятие` без авторизованного пользователя в ИБ). Названы списком, чтобы «забыли имя
@@ -262,10 +566,12 @@ def needs_script(variant: str) -> bool:
 
 
 def variant_signature(variant: str) -> dict:
-    """Форма команды варианта: режим, имена команд, вид аргументов, хвост авторизации.
+    """Форма команды варианта: режим, имена команд, вид аргументов, хвост модификаторов.
 
-    Пути (каталог конфигурации, файл программы, несуществующий каталог) заменяются метками
-    `cfg`/`script`/`baddir`, чтобы сравнивать форму команды, а не конкретные пути прогона.
+    Пути (каталог конфигурации, файл программы, несуществующий каталог, файл списка загрузки)
+    заменяются метками `cfg`/`script`/`baddir`/`listfile`, чтобы сравнивать форму команды, а не
+    конкретные пути прогона. Хвост сравнивается как список токенов: шаг, который меняет только
+    значение модификатора (`Auto` -> `AutoUpdate`), сдвигает ровно часть `tail`.
     """
     if variant in VARIANT_COMMAND:
         mode, template = VARIANT_COMMAND[variant]
@@ -273,16 +579,38 @@ def variant_signature(variant: str) -> dict:
         mode, template = "DESIGNER", [NEGATIVE_CONTROLS[variant]]
     else:
         raise KeyError(f"нет формы команды для варианта {variant}")
-    placeholders = (CFG_ARG, SCRIPT_ARG, BADDIR_ARG)
     return {"mode": mode,
-            "names": tuple(item for item in template if item not in placeholders),
-            "args": tuple(item for item in template if item in placeholders),
+            "names": tuple(item for item in template if item not in PLACEHOLDER_ARGS),
+            "args": tuple(item for item in template if item in PLACEHOLDER_ARGS),
             "tail": tuple(VARIANT_TAIL.get(variant, ()))}
 
 
 def signature_diff(left: dict, right: dict) -> list:
     """Какие части формы команды различаются: `mode`, `names`, `args`, `tail`."""
     return sorted(key for key in ("args", "mode", "names", "tail") if left[key] != right[key])
+
+
+def signature_tokens(left: dict, right: dict) -> list:
+    """Изменённые токены формы команды по позициям — не только имя изменённой части.
+
+    `signature_diff` отвечает лишь на вопрос «какая часть сдвинулась». Для лестниц модификаторов
+    этого мало: шаг должен менять ровно ОДИН токен (значение `-Format`, имя после `-Extension`,
+    добавленное или снятое имя флага). Иначе наблюдение нельзя приписать одному изменению, и
+    вывод «имя принято, но значение не проверили» повисает.
+    """
+    entries = []
+    for part in ("args", "mode", "names", "tail"):
+        before = (left["mode"],) if part == "mode" else left[part]
+        after = (right["mode"],) if part == "mode" else right[part]
+        if before == after:
+            continue
+        for position in range(max(len(before), len(after))):
+            token_from = before[position] if position < len(before) else ""
+            token_to = after[position] if position < len(after) else ""
+            if token_from != token_to:
+                entries.append({"part": part, "position": position,
+                                "from": token_from, "to": token_to})
+    return entries
 
 
 def ladder_step_diffs(ladder: tuple) -> list:
@@ -292,7 +620,8 @@ def ladder_step_diffs(ladder: tuple) -> list:
     кодирование или вариант — режим наблюдения). Если менялся вариант, отдельно показывается,
     какая ровно часть формы команды (`mode`/`names`/`args`/`tail`) при этом сдвинулась: у лестниц
     команд (`TEST_LADDER`, `AUTH_LADDER`) она тоже одиночная, иначе наблюдение нельзя отнести на
-    счёт одного изменения.
+    счёт одного изменения. И сверх этого — список изменённых токенов (`command_tokens`): для
+    лестниц модификаторов он обязан содержать ровно одну запись.
     """
     triples = [(variant, program, encoding) for variant, program, encoding in ladder]
     steps = []
@@ -301,31 +630,42 @@ def ladder_step_diffs(ladder: tuple) -> list:
         signature = variant_signature(variant)
         if index == 0:
             # Базовый шаг: сравнивать не с чем, он и есть эталон сравнения.
-            changed_triple, changed_command = [], []
+            changed_triple, changed_command, tokens = [], [], []
         else:
             previous_triple = triples[index - 1]
             changed_triple = [name for name, position in zip(("variant", "program", "encoding"),
                                                               range(3))
                               if previous_triple[position] != triple[position]]
-            changed_command = signature_diff(steps[-1]["signature"], signature)
+            previous_signature = steps[-1]["signature"]
+            changed_command = signature_diff(previous_signature, signature)
+            tokens = signature_tokens(previous_signature, signature)
         steps.append({"from": triples[index - 1][0] if index else "",
                       "to": variant,
                       "changed_triple": changed_triple,
                       "changed_command": changed_command,
+                      "command_tokens": tokens,
                       "single_variable": index == 0 or len(changed_triple) == 1,
                       "single_command_part": index == 0 or len(changed_command) <= 1,
+                      # Ровно один изменённый токен команды (или ни одного, если шаг меняет только
+                      # текст программы или кодирование). `<= 1`, а не `== 1`: у лестниц
+                      # кодирования (`SWEEP`, `PROGRAM_LADDER`) форма команды не меняется вовсе.
+                      "single_command_token": index == 0 or len(tokens) <= 1,
                       "signature": signature})
     return [{key: value for key, value in step.items() if key != "signature"} for step in steps]
 
 
 def variant_argv(variant: str, bin_path: str, ib: str, script: pathlib.Path,
                  out_file: pathlib.Path, marker: pathlib.Path, cfg: str = "",
-                 work: pathlib.Path | None = None) -> list:
+                 work: pathlib.Path | None = None, loadlist: str = "") -> list:
     """Команда платформы для одного варианта наблюдения.
 
     Все варианты начинаются с имени режима запуска (наблюдение Task 1: иначе платформа сообщает
     «Неопределен режим запуска», код 1) и всегда дают `/Out` в файл. Имена команд берутся из
-    замера имён; путь конфигурации (`--cfg`) и рабочий каталог (`--work`) даются аргументами.
+    замера имён; путь конфигурации (`--cfg`), рабочий каталог (`--work`) и файл списка загрузки
+    даются аргументами.
+
+    Метки подставляются и в шаблон команды, и в хвост: `-Extension <имя>`, `-listFile <файл>`,
+    `-Format <значение>` — иначе модификатор нельзя было бы передать вовсе.
     """
     if variant in VARIANT_COMMAND:
         mode, template = VARIANT_COMMAND[variant]
@@ -335,18 +675,52 @@ def variant_argv(variant: str, bin_path: str, ib: str, script: pathlib.Path,
         mode, template = "DESIGNER", [NEGATIVE_CONTROLS[variant]]
     else:
         raise KeyError(f"нет формы команды для варианта {variant}")
-    program = []
-    for item in template:
-        if item == CFG_ARG:
-            program.append(cfg)
-        elif item == SCRIPT_ARG:
-            program.append(str(script))
-        elif item == BADDIR_ARG:
-            program.append(str((work or pathlib.Path("work")) / "no-such-directory"))
-        else:
-            program.append(item)
+    values = {CFG_ARG: cfg,
+              SCRIPT_ARG: str(script),
+              BADDIR_ARG: str((work or pathlib.Path("work")) / "no-such-directory"),
+              LIST_ARG: loadlist}
+    program = [values.get(item, item) for item in template]
+    tail = [values.get(item, item) for item in VARIANT_TAIL.get(variant, ())]
     base = [bin_path, mode, "/F", ib, "/Out", str(out_file), "/DisableStartupDialogs"]
-    return base + program + VARIANT_TAIL.get(variant, [])
+    return base + program + tail
+
+
+def needs_loadlist(variant: str) -> bool:
+    """Подставляет ли вариант метку файла списка загрузки (`-listFile <файл>`)."""
+    signature = variant_signature(variant)
+    return LIST_ARG in signature["names"] or LIST_ARG in signature["args"] \
+        or LIST_ARG in signature["tail"]
+
+
+def loadlist_paths(cfg: pathlib.Path) -> list:
+    r"""Имена файлов для `-listFile`: абсолютные пути **корневых** XML-файлов конфигурации.
+
+    Форма взята из канона БСП, а не придумана: обработчик добавляет в список корневой файл
+    объекта (`...\Forms\ИмяФормы\Ext\` -> `...\Forms\ИмяФормы.xml`, стр. 843-844) и держит его
+    полным путём от каталога выгрузки (`РабочийКаталог + "[ВидОбъекта]\[ИмяОбъекта]\Forms\..."`,
+    стр. 698-729). Файлы каталога `Ext/` (модули, макеты, предопределённые данные) в списке не
+    перечисляют: их подтягивает иерархический формат вместе с корневым файлом объекта (стр.
+    489-491).
+    """
+    # Обратные слеши, как в каноне (`РабочийКаталог + "[ВидОбъекта]\[ИмяОбъекта]\Forms\..."`), а не
+    # `as_posix()`: список читает платформа, и её собственный способ записи имён — Windows-разделитель.
+    return [str(path) for path in sorted(cfg.rglob("*.xml")) if "Ext" not in path.parts]
+
+
+def write_loadlist(cfg: pathlib.Path, work: pathlib.Path) -> tuple:
+    r"""Файл списка загрузки в канонической форме: UTF-8, имена через `\r\n`, без пустых строк.
+
+    Требования канона (стр. 485-488): «Файл должен быть в кодировке UTF-8. Имена файлов должны быть
+    указаны через перенос. Поддерживаются символы переноса \r\n ("следующая строка") и \r ("возврат
+    каретки"). Файл не должен содержать пустые строки между именами файлов.» Одиночный `\n` в
+    списке поддерживаемых переносов нет, поэтому пишем `\r\n` и переводим запись прямо (`newline=""`),
+    чтобы байты файла совпадали с записанным содержимым.
+    """
+    work.mkdir(parents=True, exist_ok=True)
+    path = work / LOADLIST_NAME
+    names = loadlist_paths(cfg)
+    path.write_text("\r\n".join(names), encoding="utf-8", newline="")
+    return path, names
 
 
 def program_text(program: str, marker: pathlib.Path) -> str:
@@ -362,7 +736,7 @@ def program_text(program: str, marker: pathlib.Path) -> str:
 
 def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
         timeout: int = 120, encoding: str = "utf-8", program_kind: str = "marker",
-        write_script: bool = True, cfg: str = "") -> dict:
+        write_script: bool = True, cfg: str = "", loadlist: str = "") -> dict:
     """Один прогон платформы: возвращает код, секунды, байт и строки вывода, след программы.
 
     Ждём циклом с `poll`, как в `ib_loop.run_step`: зависание здесь — ожидаемый исход одного из
@@ -372,6 +746,9 @@ def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
     Кодирование файла программы — отдельная проверяемая переменная, а не деталь: наблюдение
     `runscript` дало код 1 за 2.0 с при пустом выводе, а это одинаково похоже и на «режим не
     принят», и на «файл программы не прочитан» (в программе кирилличные ключевые слова).
+
+    `loadlist` — путь файла списка загрузки для `-listFile`; его содержимое пишет
+    `write_loadlist` (каноническая форма — UTF-8, имена через перенос строки).
     """
     work.mkdir(parents=True, exist_ok=True)
     # Метка файла содержит и кодирование, и текст программы: прогон `missing` не должен
@@ -384,7 +761,7 @@ def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
         out_file.unlink()
     script, script_written = prepare_script(work, variant, label, program, encoding,
                                             marker, write_script)
-    argv = variant_argv(variant, bin_path, ib, script, out_file, marker, cfg, work)
+    argv = variant_argv(variant, bin_path, ib, script, out_file, marker, cfg, work, loadlist)
     # Собственный stdout/stderr процесса пишутся в отдельные файлы: у отказа класса «код 1 без
     # сообщения в /Out» (наблюдение runscript) больше нигде оставаться не должно.
     console_out, console_err = (work / f"exec_{variant}_{label}_stdout.txt"), \
@@ -441,9 +818,14 @@ def ladder_ok(report: dict) -> bool:
     только за дисциплину наблюдения, а исходы живут в ключах отчёта (`confirmed_modes`,
     `negative_clean`, `test_classes`). Иначе находка класса «имя принято, но процесс зависает»
     ломала бы код лестницы, на которой эту находку сделали.
+
+    Шаг, который меняет два токена команды, допускается только если он записан в
+    `TOKEN_MULTI_REASON` (смена способа входа `-User`/`-Pwd` — одна переменная, два токена);
+    необъяснённый шаг с двумя токенами дисциплину ломает.
     """
     return bool(report.get("ladder_single_variable")) and bool(
-        report.get("ladder_single_command_part", True))
+        report.get("ladder_single_command_part", True)) and bool(
+        report.get("ladder_multi_token_documented", True))
 
 
 def main(argv: list | None = None) -> int:
@@ -478,6 +860,28 @@ def main(argv: list | None = None) -> int:
                         help="лестница TEST_LADDER: имена тестовой группы замера (`/TESTCLIENT`, "
                              "`/TESTMANAGER`, `-testFile`, `-testOut`, `-TestOnly`) и соседи "
                              "`RunScript` в таблице имён платформы")
+    parser.add_argument("--predefined", action="store_true",
+                        help="лестница PREDEFINED_LADDER: `/SetPredefinedDataUpdate` и его значения "
+                             "(измеренные значения свойства `PredefinedDataUpdate` в корпусах)")
+    parser.add_argument("--extensions", action="store_true",
+                        help="лестница EXTENSION_LADDER: `-Extension`, `-AllExtensions`, "
+                             "`-RebuildConfigurationExtensions`, "
+                             "`/CheckCanApplyConfigurationExtensions`")
+    parser.add_argument("--loadopts", action="store_true",
+                        help="лестница LOADOPTS_LADDER: `-files`, `-listFile`, `-Format` — опции "
+                             "частичной загрузки, подписанные корпусом БСП как опции "
+                             "`/LoadConfigFromFiles`")
+    parser.add_argument("--update", action="store_true",
+                        help="лестница UPDATE_LADDER: `/UpdateCfg`, `/UpdateDBCfg`, `-Server` и "
+                             "CONFIG-форма канонического макета обновления корпуса")
+    parser.add_argument("--modes", action="store_true",
+                        help="лестница MODE_LADDER: один шаг, меняющий только режим запуска "
+                             "(`DESIGNER` -> `CONFIG`) при неизменной команде загрузки; делает "
+                             "вариант `config-load-ok` достижимым названной лестницей")
+    parser.add_argument("--allow-mutating", action="store_true",
+                        help="разрешить варианты из MUTATING_VARIANTS: они способны изменить "
+                             "состояние ИБ. Без этого флага такая лестница не запускается (код 2). "
+                             "Прогон делать только на отдельной временной ИБ, не на ИБ гейта.")
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--json", default="")
     args = parser.parse_args(argv)
@@ -490,11 +894,13 @@ def main(argv: list | None = None) -> int:
     if not bin_path or not ib:
         print("exec_probe: нужны --bin и --ib (или local.paths.json)", file=sys.stderr)
         return 2
-    if (args.controls or args.auth) and not cfg:
+    MUTATING_LADDERS = (args.predefined, args.extensions, args.loadopts, args.update, args.modes)
+    if (args.controls or args.auth or any(MUTATING_LADDERS)) and not cfg:
         # Контрольные прогоны строятся на команде, исход которой известен (`/LoadConfigFromFiles`
         # даёт код 0 на рабочем каталоге конфигурации — подтверждение гейта). Без каталога контроль
         # не является контролем.
-        print("exec_probe: для --controls и --auth нужен --cfg (или local.paths.json: cfg)",
+        print("exec_probe: для --controls, --auth и лестниц Task 16 (--predefined, --extensions, "
+              "--loadopts, --update, --modes) нужен --cfg (или local.paths.json: cfg)",
               file=sys.stderr)
         return 2
     # Лестницы — тройки (режим, текст программы, кодирование): ровно одна переменная на шаг.
@@ -508,12 +914,27 @@ def main(argv: list | None = None) -> int:
         ladder, ladder_name = AUTH_LADDER, "AUTH_LADDER"
     elif args.test:
         ladder, ladder_name = TEST_LADDER, "TEST_LADDER"
+    elif args.predefined:
+        ladder, ladder_name = PREDEFINED_LADDER, "PREDEFINED_LADDER"
+    elif args.extensions:
+        ladder, ladder_name = EXTENSION_LADDER, "EXTENSION_LADDER"
+    elif args.loadopts:
+        ladder, ladder_name = LOADOPTS_LADDER, "LOADOPTS_LADDER"
+    elif args.update:
+        ladder, ladder_name = UPDATE_LADDER, "UPDATE_LADDER"
+    elif args.modes:
+        ladder, ladder_name = MODE_LADDER, "MODE_LADDER"
     elif args.sweep:
         ladder, ladder_name = SWEEP, "SWEEP"
     elif args.programs:
         ladder, ladder_name = PROGRAM_LADDER, "PROGRAM_LADDER"
     elif args.all:
-        ladder = [(variant, "marker", args.encoding) for variant in VARIANTS]
+        # `--all` остаётся наблюдением без побочных изменений: варианты из `MUTATING_VARIANTS`
+        # в него не входят (они прогоняются только явно названной лестницей и с
+        # `--allow-mutating`), а оставшиеся `load-*` причины перечислены в
+        # `NON_MUTATING_LOAD_REASONS`.
+        ladder = [(variant, "marker", args.encoding)
+                  for variant in all_observation_variants()]
         ladder_name = "ALL_VARIANTS"
     else:
         ladder, ladder_name = [(args.variant, args.program, args.encoding)], "single"
@@ -522,6 +943,26 @@ def main(argv: list | None = None) -> int:
         print("exec_probe: вариантам /LoadConfigFromFiles нужен --cfg (или local.paths.json: cfg)",
               file=sys.stderr)
         return 2
+    mutating = [variant for variant, _, _ in ladder if variant in MUTATING_VARIANTS]
+    report_mutating = {"ladder_mutating_variants": mutating,
+                       "mutating_allowed": bool(args.allow_mutating),
+                       "ib_side_effects_possible": bool(mutating)}
+    if mutating and not args.allow_mutating:
+        print(f"exec_probe: лестница {ladder_name} содержит варианты, способные изменить состояние "
+              f"ИБ ({', '.join(mutating)}). Нужен --allow-mutating, и прогон делать на отдельной "
+              "временной ИБ, а не на ИБ гейта.", file=sys.stderr)
+        return 2
+    # Файл списка загрузки пишется только там, где команда подставляет его аргументом (`-listFile`).
+    # Содержимое каноническое: абсолютные пути корневых XML-файлов, UTF-8, имена через перенос.
+    loadlist = ""
+    if any(needs_loadlist(variant) for variant, _, _ in ladder):
+        if not cfg:
+            print("exec_probe: для -listFile нужен --cfg (список строится из каталога конфигурации)",
+                  file=sys.stderr)
+            return 2
+        list_path, list_names = write_loadlist(pathlib.Path(cfg), work)
+        loadlist = str(list_path)
+        print(f"файл списка загрузки: {list_path.as_posix()} ({len(list_names)} имён)")
     # Прогон строго последовательный: 1С-прогоны не выполняются параллельно (наблюдение контура),
     # поэтому лестница идёт в этом цикле, а не через параллельный запуск.
     results = [run(bin_path, ib, PROGRAMS[kind], variant, work, args.timeout, encoding,
@@ -530,7 +971,7 @@ def main(argv: list | None = None) -> int:
                    # `/LoadConfigFromFiles`, `-TestOnly` и `/AllowExecuteScheduledJobs` файл
                    # программы не читают, и лишний файл в рабочем каталоге размывает границу.
                    write_script=kind != "missing" and needs_script(variant),
-                   cfg=cfg)
+                   cfg=cfg, loadlist=loadlist)
                for variant, kind, encoding in ladder]
     for result in results:
         print("==", result["variant"], "|", result["program_kind"], "|",
@@ -561,6 +1002,65 @@ def main(argv: list | None = None) -> int:
     for step in report["ladder_diffs"][1:]:
         print("   шаг:", step["from"], "->", step["to"],
               "| тройка:", step["changed_triple"], "| команда:", step["changed_command"])
+    # Дисциплина токенов: шаг лестницы модификаторов обязан менять ровно ОДИН токен команды,
+    # иначе нельзя сказать, каким именно изменением получен исход (например `-Format Hierarchical`
+    # -> `-Format Plain`). Отчёт держит и позиции изменённых токенов, и список исключений.
+    report["ladder_single_command_token"] = all(step["single_command_token"]
+                                                for step in report["ladder_diffs"])
+    report["ladder_token_positions"] = [{"from": step["from"], "to": step["to"],
+                                         "tokens": step["command_tokens"]}
+                                        for step in report["ladder_diffs"][1:]]
+    multi = [step for step in report["ladder_diffs"][1:] if len(step["command_tokens"]) > 1]
+    report["ladder_multi_token_steps"] = [
+        {"from": step["from"], "to": step["to"], "tokens": step["command_tokens"],
+         "reason": TOKEN_MULTI_REASON.get((step["from"], step["to"]), "")} for step in multi]
+    report["ladder_multi_token_documented"] = all(entry["reason"]
+                                                  for entry in report["ladder_multi_token_steps"])
+    print("один токен команды на шаг:", report["ladder_single_command_token"],
+          "| недокументированных шагов с двумя токенами:",
+          sum(1 for entry in report["ladder_multi_token_steps"] if not entry["reason"]))
+    report.update(report_mutating)
+    if mutating:
+        print("варианты, способные изменить состояние ИБ:", mutating)
+    if predicted := [r for r in results if r["variant"] in PREDICTIONS]:
+        # Предсказания записаны в `PREDICTIONS` до прогона. Сверка механическая: источник
+        # (`verify_prediction_sources`) обязан читаться, а сбывшееся предсказание — иметь код:
+        # у зависшего прогона кода нет, поэтому оно не считается ни сбывшимся, ни опровергнутым.
+        sources = verify_prediction_sources(args.local, ROOT)
+        outcomes = {}
+        for result in predicted:
+            record = PREDICTIONS[result["variant"]]
+            code = result["code"]
+            if code is None:
+                status = "no_code"
+            elif record["predicts"] == "code0":
+                status = "held" if code == 0 else "broken"
+            else:
+                status = "held" if code != 0 else "broken"
+            outcomes[result["variant"]] = {
+                "predicts": record["predicts"], "kind": record["kind"],
+                "quote": record["quote"], "outcome": list(outcome_key(result)),
+                "code": code, "status": status,
+                "source_ok": sources[result["variant"]]["file_found"]
+                             and sources[result["variant"]]["needle_found"],
+            }
+        report["predictions"] = outcomes
+        report["prediction_sources"] = sources
+        report["predictions_held"] = sorted(name for name, value in outcomes.items()
+                                            if value["status"] == "held")
+        report["predictions_broken"] = sorted(name for name, value in outcomes.items()
+                                             if value["status"] == "broken")
+        report["predictions_unresolved"] = sorted(name for name, value in outcomes.items()
+                                                 if value["status"] == "no_code")
+        report["prediction_sources_ok"] = all(value["source_ok"] for value in outcomes.values())
+        print("предсказания (записаны до прогона):")
+        for name in sorted(outcomes):
+            value = outcomes[name]
+            print(f"   {name}: ждали {value['predicts']}, код {value['code']} -> {value['status']}"
+                  f" | источник {value['source_ok']}")
+        print("сбылось:", report["predictions_held"] or "нет",
+              "| опровергнуто:", report["predictions_broken"] or "нет",
+              "| без кода (зависание):", report["predictions_unresolved"] or "нет")
     if args.controls:
         # Контролем служит сам факт различимости: если все исходы совпали, контроль ничего не
         # утверждает, и вывод `runscript` остаётся двусмысленным.
@@ -647,6 +1147,15 @@ def main(argv: list | None = None) -> int:
         # Наблюдение этих лестниц не имеет «правильного» исхода: код говорит только о том, что
         # лестница выдержана (одно изменение на шаг). Состав наблюдения — в JSON-отчёте.
         return 0 if ladder_ok(report) else 1
+    if args.predefined or args.extensions or args.loadopts or args.update or args.modes:
+        # Код отвечает за дисциплину: один токен команды на шаг, читаемый источник предсказания,
+        # наличие `--allow-mutating`. Состав исходов (имя принято или отвергнуто, предсказание
+        # сбылось или опровергнуто) живёт в ключах отчёта `predictions*`, а не в коде: и «имя
+        # принято», и «имя отвергнуто» — находки.
+        if not report["prediction_sources_ok"]:
+            print("exec_probe: источник предсказания не читается: предсказание без источника "
+                  "предсказанием не считается", file=sys.stderr)
+        return 0 if (ladder_ok(report) and report["prediction_sources_ok"]) else 1
     report["execution_confirmed"] = bool(executed)
     return 0 if ladder_ok(report) else 1
 
@@ -713,6 +1222,89 @@ TEST_LADDER = (("runscript", "marker", "cp1251"),
                ("testonly-flag", "marker", "cp1251"),
                ("testclient-plain", "marker", "cp1251"),
                ("testmanager-plain", "marker", "cp1251"))
+
+# Лестницы модификаторов `/LoadConfigFromFiles` (Task 16). Все четыре начинаются с заведомо
+# рабочего шага `load-ok` (гейт подтверждает код 0) и дальше меняют только хвост, поэтому исход
+# каждого шага нельзя приписать ничему, кроме одного изменённого токена (`command_tokens` в
+# `ladder_diffs`). Порядок подобран именно так: `-AllExtensions` без значения стоит после шага с
+# лишним positional-аргументом, `-Format` — только после `-listFile`, потому что канон связывает
+# `format` с частичной загрузкой (стр. 489).
+#
+# Каждая из этих лестниц способна изменить состояние ИБ (загрузить конфигурацию целиком или по
+# списку файлов, создать расширение, сменить режим обновления предопределённых данных), поэтому
+# она требует `--allow-mutating` и идёт на отдельной временной ИБ, а не на ИБ гейта.
+PREDEFINED_LADDER = (("load-ok", "marker", "cp1251"),
+                     # `=`-форма и форма с отдельным значением: иначе «значение принято» нельзя
+                     # отличить от «значение проигнорировали».
+                     ("load-predefined-equals-dontupdate", "marker", "cp1251"),
+                     ("load-predefined-flag", "marker", "cp1251"),
+                     ("load-predefined-auto", "marker", "cp1251"),
+                     ("load-predefined-autoupdate", "marker", "cp1251"),
+                     ("load-predefined-dontupdate", "marker", "cp1251"),
+                     # Вымышленное значение: если итог совпадает с `DontAutoUpdate`, значение не
+                     # проверялось вовсе.
+                     ("load-predefined-bogus-value", "marker", "cp1251"))
+
+EXTENSION_LADDER = (("load-ok", "marker", "cp1251"),
+                    ("load-extension-flag", "marker", "cp1251"),
+                    ("load-extension-bogus-name", "marker", "cp1251"),
+                    ("load-extension-cfgdir", "marker", "cp1251"),
+                    ("load-extension-baddir", "marker", "cp1251"),
+                    ("load-allextensions-baddir", "marker", "cp1251"),
+                    ("load-allextensions-flag", "marker", "cp1251"),
+                    ("load-rebuild-extensions", "marker", "cp1251"),
+                    ("load-check-can-apply", "marker", "cp1251"))
+
+LOADOPTS_LADDER = (("load-ok", "marker", "cp1251"),
+                   ("load-files-flag", "marker", "cp1251"),
+                   ("load-files-onefile", "marker", "cp1251"),
+                   ("load-listfile-onefile", "marker", "cp1251"),
+                   ("load-listfile-ok", "marker", "cp1251"),
+                   ("load-format-flag", "marker", "cp1251"),
+                   ("load-format-hierarchical", "marker", "cp1251"),
+                   ("load-format-plain", "marker", "cp1251"),
+                   ("load-format-bogus", "marker", "cp1251"))
+
+# Лестница режимов обновления (Task 16). Шаг за шагом меняется: аргумент (`args`), имя команды
+# (`names`), модификатор (`tail`) и, наконец, режим запуска (`mode`). Канон форм — макет обновления
+# корпуса (`docs/evidence/cli-canonical-usage.md`): `/LoadCfg "<cf>"`, `/UpdateCfg "<cf|cfu>"`,
+# `/UpdateDBCfg -server` и CONFIG-форма того же макета в УХ.
+UPDATE_LADDER = (("load-ok", "marker", "cp1251"),
+                 ("load-noarg", "marker", "cp1251"),
+                 ("update-cfg-noarg", "marker", "cp1251"),
+                 ("update-dbcfg", "marker", "cp1251"),
+                 ("update-dbcfg-server", "marker", "cp1251"),
+                 ("config-update-dbcfg-server", "marker", "cp1251"))
+
+# Лестница режимов запуска (Task 16). Единственная изменённая позиция — режим: `DESIGNER` ->
+# `CONFIG` при неизменной команде `/LoadConfigFromFiles <каталог конфигурации>`, исход которой в
+# `DESIGNER` подтверждён (код 0, `reports/gate-*.json`). Смысл шага: канонический макет
+# обновления корпуса пишет CONFIG-форму (`CONFIG {0} {1} /UpdateDBCfg -server ...`), и без этого
+# наблюдения неизвестно, принимает ли этот режим вообще команду загрузки из файлов — то есть является
+# ли `CONFIG` рабочим режимом для нашей конфигурации или только для обновления. Без лестницы вариант
+# `config-load-ok` не доставался ни одной названной лестницей и оставался наблюдением «на будущее».
+# `config-load-ok` предсказания в `PREDICTIONS` не имеет и это записано, а не забыто: источника,
+# который предсказывал бы исход пары `CONFIG` + `/LoadConfigFromFiles`, нет. Обход корпусов
+# (`reports/corpora-cli-usage-16.json`): `LoadConfigFromFiles` — 4 вхождения, все в подписи опций
+# БСП (DESIGNER-форма), а CONFIG-форма макета обновления пишет только `/UpdateCfg` и
+# `/UpdateDBCfg`. Предсказывать тут было бы нечего, поэтому шаг идёт как наблюдение без
+# предсказания; эталонный `load-ok` при этом предсказан (`kontur`: `load_code` = 0).
+MODE_LADDER = (("load-ok", "marker", "cp1251"),
+               ("config-load-ok", "marker", "cp1251"))
+
+# Шаги прежних лестниц, где меняется ровно ДВА токена, и почему это всё ещё одно изменение.
+# Способ входа `-User=<имя>` + `-Pwd=<пароль>` — ОДИН измеренный способ авторизации: в таблице
+# имён платформы он описан двумя ключами (`CmdLine/UserName` и `CmdLine/UserPassword`), поэтому
+# смена способа (одна переменная наблюдения) физически не может быть одним токеном. Каждый такой
+# шаг зафиксирован здесь; лестница модификаторов (Task 16) таких шагов не имеет.
+TOKEN_MULTI_REASON = {
+    ("load-currentuser", "load-credentials"):
+        "способ входа меняется целиком: -User/-Pwd — один измеренный способ (два ключа таблицы имён)",
+    ("runscript-authoff", "runscript-credentials"):
+        "способ входа меняется целиком: -User/-Pwd — один измеренный способ (два ключа таблицы имён)",
+    ("runscript-credentials", "runscript-currentuser"):
+        "способ входа меняется целиком: -User/-Pwd — один измеренный способ (два ключа таблицы имён)",
+}
 
 
 def outcome_key(result: dict) -> tuple:

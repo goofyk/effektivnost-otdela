@@ -1,7 +1,8 @@
 """Тесты плана наблюдения выгрузки/загрузки внешней обработки (probe/epf_roundtrip.py).
 
 Платформу тесты не запускают: они закрепляют форму наблюдения и дисциплину лестницы. Сами замеры
-лежат в `reports/epf-15-roundtrip.json`.
+лежат в `reports/epf-16-roundtrip.json` (исправленная версия; `reports/epf-15-roundtrip.json` осталась
+как запись первой версии с дефектом снимка).
 
 Что закреплено и почему:
 
@@ -125,12 +126,75 @@ class TestHelpers(unittest.TestCase):
             items = epf_roundtrip.tree_files(root)
             self.assertEqual([item["path"] for item in items], ["Обработка/Forms/Module.bsl"])
 
+    def test_tree_files_records_a_content_hash(self):
+        """`bytes` не различает «тот же файл» и «другой файл той же длины», поэтому нужен SHA-1."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "А.xml").write_text("AAAA", encoding="utf-8")
+            (root / "Б.xml").write_text("BBBB", encoding="utf-8")
+            items = {item["path"]: item for item in epf_roundtrip.tree_files(root)}
+            self.assertEqual(sorted(items), ["А.xml", "Б.xml"])
+            for item in items.values():
+                self.assertEqual(len(item["sha1"]), 16, item)
+                int(item["sha1"], 16)
+            self.assertNotEqual(items["А.xml"]["sha1"], items["Б.xml"]["sha1"])
+            self.assertEqual(items["А.xml"]["bytes"], 4)
+
+    def test_produced_files_separates_the_directories_the_platform_writes_to(self):
+        """Выгрузка пишет в каталог выгрузки; загрузка в отдельный каталог — в него; иначе только `.epf`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            outdir, targetdir = root / "dump_outdir", root / "load_targetdir"
+            (outdir / "Обработка" / "Forms").mkdir(parents=True)
+            (outdir / "Обработка.xml").write_text("<xml/>", encoding="utf-8")
+            (outdir / "Обработка" / "Forms" / "Module.bsl").write_text("Процедура();", encoding="utf-8")
+            (outdir / "Обработка.epf").write_bytes(b"binary")
+            targetdir.mkdir()
+            (targetdir / "Другая.epf").write_bytes(b"binary")
+
+            dumped = epf_roundtrip.produced_files(epf_roundtrip.DUMP, ("outdir", "epf"),
+                                                  outdir, targetdir)
+            # Порядок задаёт `sorted` по составным частям пути: сначала поддерево каталога
+            # `Обработка`, затем файлы `Обработка.epf`, `Обработка.xml` в корне.
+            self.assertEqual([item["path"] for item in dumped],
+                             ["Обработка/Forms/Module.bsl", "Обработка.epf", "Обработка.xml"])
+
+            into_outdir = epf_roundtrip.produced_files(epf_roundtrip.LOAD, ("epf", "outdir"),
+                                                       outdir, targetdir)
+            self.assertEqual([item["path"] for item in into_outdir], ["Обработка.epf"])
+
+            into_target = epf_roundtrip.produced_files(epf_roundtrip.LOAD, ("root", "targetdir"),
+                                                       outdir, targetdir)
+            self.assertEqual([item["path"] for item in into_target], ["Другая.epf"])
+
     def test_missing_epf_is_a_usage_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             local = pathlib.Path(tmp) / "local.paths.json"
             local.write_text(json.dumps({"bin": "1cv8.exe", "ib": "ib", "work": tmp}),
                              encoding="utf-8")
             self.assertEqual(epf_roundtrip.main(["--local", str(local)]), 2)
+
+
+class TestSnapshotPlacement(unittest.TestCase):
+    """Снимок дерева каталога выгрузки обязан сниматься до шагов загрузки.
+
+    Первая версия замера (`reports/epf-15-roundtrip.json`) снимала дерево в момент, когда впервые
+    понадобился корневой XML, то есть после шага `load-epf-dir`; в «дереве выгрузки» появился
+    `.epf`, записанный загрузкой.
+    """
+
+    def test_snapshot_positions_of_the_plan(self):
+        snapshot = epf_roundtrip.snapshot_positions()
+        self.assertEqual(snapshot["dump_at"], [0, 1, 2], snapshot)
+        self.assertEqual(snapshot["root_at"], [4, 5], snapshot)
+        self.assertTrue(snapshot["dump_before_first_root"], snapshot)
+
+    def test_every_load_step_also_uses_the_snapshot(self):
+        """Ни один шаг не ждёт дерево позже последнего шага выгрузки: `snapshot` снимается на выгрузках."""
+        snapshot = epf_roundtrip.snapshot_positions()
+        load_at = [index for index, (_, command, _) in enumerate(epf_roundtrip.STEP_PLAN)
+                   if command == epf_roundtrip.LOAD]
+        self.assertTrue(max(snapshot["dump_at"]) < min(load_at), (snapshot, load_at))
 
 
 if __name__ == "__main__":

@@ -18,14 +18,27 @@
    директории, в то время как ожидается путь к файлу». Значит платформа не подставляет аргументы по
    типу, она читает позиции.
 4. Тот же набор аргументов, но другая команда (`load-epf-dir`) — не отказ: платформа приняла
-   бинарный `.epf` как «корневой файл выгрузки» и выдала другой бинарный `.epf` (310 мс против
-   3100 мс у загрузки выгруженного XML). Значит проверка «является файлом обработки или отчёта»
-   у первого аргумента смотрит на содержимое: так было с текстовым файлом программы
+   бинарный `.epf` как «корневой файл выгрузки» и выдала другой бинарный `.epf` (12132 байта, шаг
+   `load-epf-dir`). Значит проверка «является файлом обработки или отчёта» у первого аргумента
+   смотрит на содержимое: так было с текстовым файлом программы
    (`reports/exec-13-test.json`, вариант `extproc-file` — «Файл 'file://...txt' не является файлом
    обработки или отчета»).
 5. Загрузка выгруженного корневого XML: `load-root-dir` и `load-root-target` — код 0 и бинарный
    `.epf` на выходе (цикл `.epf` -> файлы -> `.epf` замкнут). Целевой аргумент может быть каталогом
    (платформа сама подбирает имя файла) или файлом (замер `reports/exec-14-extproc-twoargs.json`).
+   По отчёту замера wall-clock шагов: 1.2 с у `load-epf-dir` против 1.5 с у `load-root-dir`; в
+   отчёт не записано, сколько из этого — сама операция платформы, поэтому «загрузка бинарного
+   `.epf` быстрее» этот замер не утверждает.
+
+Два исправления собственного замера (первая версия `reports/epf-15-roundtrip.json`):
+
+* дерево каталога выгрузки снималось в момент, когда впервые понадобился корневой XML, то есть на
+  шаге `load-root-dir` — уже после шага `load-epf-dir`, который записал в этот каталог свой
+  `.epf`. В снимке появилось 5 файлов вместо 4, и пятым был файл загрузки, а не выгрузки. Теперь
+  снимок обновляется на каждом шаге выгрузки (`snapshot_positions`), и тест закрепляет, что все
+  шаги выгрузки идут раньше первого шага, которому нужен корневой XML;
+* размера файла не хватало, чтобы отличить «тот же файл» от «другого файла той же длины», поэтому
+  `tree_files` пишет ещё короткий SHA-1 (`sha1`, 16 шестнадцатеричных цифр).
 
 Пути (`bin`, `ib`, `work`, `epf`) берутся из `local.paths.json` или из аргументов запуска; путей
 пользователя в файле репозитория нет. Прогоны 1С идут строго по одному; исходный `.epf`
@@ -34,6 +47,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import shutil
@@ -100,10 +114,47 @@ def decode_out(raw: bytes) -> list:
 
 
 def tree_files(directory: pathlib.Path) -> list:
+    """Дерево каталога: относительный путь, размер и короткий контроль содержимого.
+
+    Короткий SHA-1 нужен потому, что `bytes` сам по себе не различает «платформа перечислила тот
+    же файл» и «платформа записала другой файл той же длины»."""
     if not directory.is_dir():
         return []
-    return [{"path": path.relative_to(directory).as_posix(), "bytes": path.stat().st_size}
-            for path in sorted(directory.rglob("*")) if path.is_file()]
+    items = []
+    for path in sorted(directory.rglob("*")):
+        if not path.is_file():
+            continue
+        raw = path.read_bytes()
+        items.append({"path": path.relative_to(directory).as_posix(), "bytes": len(raw),
+                      "sha1": hashlib.sha1(raw).hexdigest()[:16]})
+    return items
+
+
+def produced_files(command: str, labels: tuple, outdir: pathlib.Path,
+                   targetdir: pathlib.Path) -> list:
+    """Что считать файлами после шага.
+
+    Шаги выгрузки пишут в каталог выгрузки. Шаг загрузки с отдельным целевым каталогом пишет в
+    этот каталог. Остальные шаги загрузки пишут бинарный `.epf` в каталог выгрузки, поэтому у них
+    берём только `.epf`-файлы: иначе в список попадали файлы предыдущей выгрузки.
+    """
+    if command == DUMP:
+        return tree_files(outdir)
+    if labels[1] == "targetdir":
+        return tree_files(targetdir)
+    return [item for item in tree_files(outdir) if item["path"].lower().endswith(".epf")]
+
+
+def snapshot_positions(steps: tuple = STEP_PLAN) -> dict:
+    """Где по плану снимают дерево каталога выгрузки и где это дерево начинают использовать.
+
+    Снимок обязан сниматься на шагах выгрузки, то есть до первого шага загрузки, которому нужен
+    корневой XML. Иначе файл, записанный загрузкой, попадёт в «дерево выгрузки» и замер будет
+    описывать не выгрузку."""
+    dump_at = [index for index, (_, command, _) in enumerate(steps) if command == DUMP]
+    root_at = [index for index, (_, _, labels) in enumerate(steps) if "root" in labels]
+    return {"dump_at": dump_at, "root_at": root_at,
+            "dump_before_first_root": bool(dump_at and root_at) and max(dump_at) < min(root_at)}
 
 
 def root_candidates(directory: pathlib.Path) -> list:
@@ -201,30 +252,37 @@ def main(argv: list | None = None) -> int:
         print("   шаг", step["from"], "->", step["to"], "| изменилось:", step["changed"] or "ничего")
 
     resolved = {"epf": epf, "outdir": outdir, "targetdir": targetdir, "root": None}
+    report["snapshot_positions"] = snapshot_positions()
     executed = []
     for name, command, labels in STEP_PLAN:
         step_args = list(labels)
         if "root" in labels:
-            # Корневой XML берём из выгрузки шага 1; снимок дерева берём до шагов загрузки,
-            # чтобы шаг с целевым каталогом выгрузки не подмешал в него свои файлы.
+            # Корневой XML и дерево выгрузки берутся из снимка последнего шага выгрузки: к этому
+            # моменту загрузка ещё ничего не записала в каталог выгрузки, и в снимке нет файлов,
+            # которые в него записала загрузка.
             if resolved["root"] is None:
-                roots = root_candidates(outdir)
-                report["dump_root_candidates"] = roots
+                roots = report.get("dump_root_candidates") or []
                 if not roots:
                     print("шаг", name, "и остальные шаги загрузки пропущены: выгрузка не дала "
                           "корневого XML в корне каталога")
                     break
                 resolved["root"] = outdir / roots[0]
-                resolved["dump_tree"] = tree_files(outdir)
-                report["dump_tree"] = resolved["dump_tree"]
             step_args = ["root" if label == "root" else label for label in labels]
         result = run_step(name, command, [resolved[label] for label in step_args],
                           bin_path, ib, work, args.timeout)
         result["labels"] = list(labels)
-        result["produced"] = (tree_files(outdir) if command == DUMP
-                              else tree_files(targetdir) if labels[1] == "targetdir"
-                              else [item for item in tree_files(outdir)
-                                    if item["path"].lower().endswith(".epf")])
+        if command == DUMP:
+            dump_tree = tree_files(outdir)
+            result["produced"] = dump_tree
+            result["produced_dir"] = "outdir"
+            # Снимок выгрузки обновляется на каждом шаге выгрузки: последний снимок и есть дерево
+            # выгрузки, снятое до шагов загрузки.
+            report["dump_tree"] = dump_tree
+            report["dump_root_candidates"] = root_candidates(outdir)
+        else:
+            result["produced"] = produced_files(command, labels, outdir, targetdir)
+            result["produced_dir"] = ("targetdir" if labels[1] == "targetdir"
+                                      else "outdir (только .epf)")
         report["steps"].append(result)
         executed.append((name, command, labels))
         report_step(result, result["produced"])
