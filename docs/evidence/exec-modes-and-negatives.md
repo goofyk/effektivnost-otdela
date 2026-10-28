@@ -7,6 +7,8 @@
 в этих прогоны отвечает только за дисциплину лестницы: исход живёт в `bytes` (размер `/Out`),
 в дословном списке строк `/Out` и в признаке `timed_out`.
 
+Пояснение о путях: в цитируемых командах и строках `/Out` машинный префикс свёрнут до `<tmp>` (временный каталог замеров) и до `<repo>` (рабочее дерево). Полные строки замера лежат в артефактах `reports/exec-*.json`; байты, коды и секунды в таблицах — дословные значения артефакта. Искажённые глифы, которые платформа вывела вместо имён путей, записаны escape-последовательностями (`\uc540` и т. п.), потому что один из них невидим; речь про U+C540, U+8BCC, U+19F и U+E540, U+C079, U+1B9 (подробнее — раздел 8).
+
 Запись «маркер BSL» означает: в скрипте, который мы просили платформу выполнить, была строка
 `P1C-EXEC-MARKER`, и мы искали её в журнале `/Out` и в консоли процесса. Ни в одном прогоне маркер
 не появился. «3 байта» в колонке байт — это пустой журнал из одного BOM: платформа создала файл, но
@@ -104,11 +106,12 @@
 ## 8. Внешние обработки: порядок аргументов и mojibake
 
 `/LoadExternalDataProcessorOrReportFromFiles <файл, не являющийся обработкой>`: код 1, 475 байт,
-пять строк, среди них `Целевой каталог или файл: 앀诌Ɵ` (U+C540, U+8BCC, U+19F — искажённое имя
+пять строк, среди них `Целевой каталог или файл: \uc540\u8bcc\u019f` (U+C540, U+8BCC, U+19F — искажённое имя
 пути) и `Файл 'file://…' не является файлом обработки или отчета.`
 Без аргумента: код 1, 200 байт, пять строк (последняя пустая); оба пути платформа вывела искажёнными
-символами: `\ue540쁹ƹ` и `\ue540쁹ƹ` — private-use зона Unicode (U+E540), то есть платформа
+символами: `\ue540\uc079\u01b9` — оба пути искажены одинаково, первый глиф лежит в private-use зоне Unicode (U+E540), то есть платформа
 печатает отсутствующий аргумент, а не наш путь.
+Искажённые глифы в цитатах `/Out` здесь записаны escape-последовательностями (`\uc540\u8bcc\u019f`, `\ue540\uc079\u01b9`), потому что один из них невидим, а другие печатаются иероглифами: речь про U+C540, U+8BCC, U+19F (прогон `extproc-file`) и U+E540, U+C079, U+1B9 (прогон `extproc-noarg`). В артефакте `reports/exec-13-test.json` эти же символы стоят литерами.
 Двухаргументный контроль `/DumpExternalDataProcessorOrReportToFiles <файл> <каталог>` (код 1,
 410 байт) показывает, что платформа подписывает аргументы наперекос: в строке
 `Входной бинарный файл:` оказывается второй аргумент, а в
@@ -145,25 +148,25 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_broken_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_runtime_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_missing_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_ascii_utf8.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_empty_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_broken_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_runtime_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_missing_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_ascii_utf8.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_empty_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
 
 ### exec-12-sweep.json — обход форм исполнения (RunScript, EXECUTE, варианты доступа)
 - `executed_variants` = []
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_utf8bom.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_utf8.txt` | 1 | 2.0 | 3 | [] | нет |
-| execute | `/DisableStartupDialogs /EXECUTE C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_execute_marker_utf8.txt` | 1 | 40.4 | 0 | [] | таймаут |
-| runscript-authoff | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-authoff_marker_utf8.txt /authoff` | 1 | 2.0 | 3 | [] | нет |
-| runscript-credentials | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-credentials_marker_utf8.txt -User=1CTest -PUser=1CTest` | 1 | 2.0 | 3 | [] | нет |
-| runscript-currentuser | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-currentuser_marker_utf8.txt -CurrentUser` | 1 | 2.0 | 3 | [] | нет |
-| runscript-external | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-external_marker_utf8.txt -ExternalConnection` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_utf8bom.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_utf8.txt` | 1 | 2.0 | 3 | [] | нет |
+| execute | `/DisableStartupDialogs /EXECUTE <tmp>\p1c_effektivnost\exec_execute_marker_utf8.txt` | 1 | 40.4 | 0 | [] | таймаут |
+| runscript-authoff | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-authoff_marker_utf8.txt /authoff` | 1 | 2.0 | 3 | [] | нет |
+| runscript-credentials | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-credentials_marker_utf8.txt -User=1CTest -PUser=1CTest` | 1 | 2.0 | 3 | [] | нет |
+| runscript-currentuser | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-currentuser_marker_utf8.txt -CurrentUser` | 1 | 2.0 | 3 | [] | нет |
+| runscript-external | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-external_marker_utf8.txt -ExternalConnection` | 1 | 2.0 | 3 | [] | нет |
 
 ### exec-12-controls.json — контроли: загружающая команда без аргумента и с битым аргументом
 - `controls_classes` = [[0, false, "пустой"], [1, false, "непустой"], [1, false, "пустой"]]
@@ -172,9 +175,9 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела` | 0 | 3.0 | 3 | [] | нет |
+| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 3.0 | 3 | [] | нет |
 | load-noarg | `/DisableStartupDialogs /LoadConfigFromFiles` | 1 | 2.0 | 40 | ["Файл не обнаружен ''"] | нет |
-| load-baddir | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 117 | ["Файл не обнаружен 'C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\no-such-directory'"] | нет |
+| load-baddir | `/DisableStartupDialogs /LoadConfigFromFiles <tmp>\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 117 | ["Файл не обнаружен '<tmp>\\p1c_effektivnost\\no-such-directory'"] | нет |
 | runscript-noarg | `/DisableStartupDialogs /RunScript` | 1 | 2.1 | 3 | [] | нет |
 
 ### exec-12-negative.json — отрицательные контроли: несуществующие имена флагов
@@ -185,7 +188,7 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.1 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.1 | 3 | [] | нет |
 | bogus-slash | `/DisableStartupDialogs /ZzzNetakoyKomandyNet` | 1 | 1.0 | 70 | ["Пользователь ИБ не идентифицирован"] | нет |
 | bogus-dash | `/DisableStartupDialogs -ZzzNetakoyKomandyNet` | 1 | 60.3 | 0 | [] | таймаут |
 
@@ -202,11 +205,11 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела` | 0 | 3.0 | 3 | [] | нет |
-| load-authoff | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела /authoff` | 0 | 2.0 | 3 | [] | нет |
-| load-allusers | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела -AllUsers` | 0 | 2.0 | 3 | [] | нет |
-| load-currentuser | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела -CurrentUser` | 0 | 2.0 | 3 | [] | нет |
-| load-credentials | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела -User=1CTest -Pwd=1CTest` | 0 | 2.0 | 3 | [] | нет |
+| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 3.0 | 3 | [] | нет |
+| load-authoff | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела /authoff` | 0 | 2.0 | 3 | [] | нет |
+| load-allusers | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела -AllUsers` | 0 | 2.0 | 3 | [] | нет |
+| load-currentuser | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела -CurrentUser` | 0 | 2.0 | 3 | [] | нет |
+| load-credentials | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела -User=1CTest -Pwd=1CTest` | 0 | 2.0 | 3 | [] | нет |
 
 ### exec-13-sweep.json — обход форм исполнения, второй заход
 - `executed_variants` = []
@@ -217,15 +220,15 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_utf8bom.txt` | 1 | 2.0 | 3 | [] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_utf8.txt` | 1 | 2.0 | 3 | [] | нет |
-| execute | `/DisableStartupDialogs /EXECUTE C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_execute_marker_utf8.txt` | 1 | 40.3 | 0 | [] | таймаут |
-| execute-authoff | `/DisableStartupDialogs /EXECUTE C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_execute-authoff_marker_utf8.txt /authoff` | 1 | 40.3 | 0 | [] | таймаут |
-| runscript-authoff | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-authoff_marker_utf8.txt /authoff` | 1 | 2.0 | 3 | [] | нет |
-| runscript-credentials | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-credentials_marker_utf8.txt -User=1CTest -Pwd=1CTest` | 1 | 2.0 | 3 | [] | нет |
-| runscript-currentuser | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-currentuser_marker_utf8.txt -CurrentUser` | 1 | 2.0 | 3 | [] | нет |
-| runscript-external | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript-external_marker_utf8.txt -ExternalConnection` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_utf8bom.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_utf8.txt` | 1 | 2.0 | 3 | [] | нет |
+| execute | `/DisableStartupDialogs /EXECUTE <tmp>\p1c_effektivnost\exec_execute_marker_utf8.txt` | 1 | 40.3 | 0 | [] | таймаут |
+| execute-authoff | `/DisableStartupDialogs /EXECUTE <tmp>\p1c_effektivnost\exec_execute-authoff_marker_utf8.txt /authoff` | 1 | 40.3 | 0 | [] | таймаут |
+| runscript-authoff | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-authoff_marker_utf8.txt /authoff` | 1 | 2.0 | 3 | [] | нет |
+| runscript-credentials | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-credentials_marker_utf8.txt -User=1CTest -Pwd=1CTest` | 1 | 2.0 | 3 | [] | нет |
+| runscript-currentuser | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-currentuser_marker_utf8.txt -CurrentUser` | 1 | 2.0 | 3 | [] | нет |
+| runscript-external | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript-external_marker_utf8.txt -ExternalConnection` | 1 | 2.0 | 3 | [] | нет |
 
 ### exec-13-controls.json — контроли лестницы: load-ok / load-noarg / load-baddir
 - `controls_classes` = [[0, false, "пустой"], [1, false, "непустой"], [1, false, "пустой"]]
@@ -241,11 +244,11 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
 | runscript-noarg | `/DisableStartupDialogs /RunScript` | 1 | 2.0 | 3 | [] | нет |
 | load-noarg | `/DisableStartupDialogs /LoadConfigFromFiles` | 1 | 2.0 | 40 | ["Файл не обнаружен ''"] | нет |
-| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
-| load-baddir | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 117 | ["Файл не обнаружен 'C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\no-such-directory'"] | нет |
+| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
+| load-baddir | `/DisableStartupDialogs /LoadConfigFromFiles <tmp>\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 117 | ["Файл не обнаружен '<tmp>\\p1c_effektivnost\\no-such-directory'"] | нет |
 
 ### exec-13-negative.json — отрицательные контроли, второй заход
 - `executed_variants` = []
@@ -260,7 +263,7 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
 | runscript-noarg | `/DisableStartupDialogs /RunScript` | 1 | 2.0 | 3 | [] | нет |
 | bogus-slash | `/DisableStartupDialogs /ZzzNetakoyKomandyNet` | 1 | 2.0 | 70 | ["Пользователь ИБ не идентифицирован"] | нет |
 | bogus-dash | `/DisableStartupDialogs -ZzzNetakoyKomandyNet` | 1 | 40.4 | 0 | [] | таймаут |
@@ -278,15 +281,15 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| enterprise-runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_enterprise-runscript_marker_cp1251.txt` | 1 | 2.0 | 107 | ["Запрещено использование окон. Передан ключ DisableStartupDialogs."] | нет |
-| runscript | `/DisableStartupDialogs /RunScript C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
-| testclient-file | `/DisableStartupDialogs /TESTCLIENT C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_testclient-file_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
-| testfile-flag | `/DisableStartupDialogs -testFile C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_testfile-flag_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
-| testout-flag | `/DisableStartupDialogs -testOut C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_testout-flag_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
-| testmanager-file | `/DisableStartupDialogs /TESTMANAGER C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_testmanager-file_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
-| extproc-file | `/DisableStartupDialogs /LoadExternalDataProcessorOrReportFromFiles C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_extproc-file_marker_cp1251.txt` | 1 | 2.0 | 475 | ["Загрузка внешней обработки или отчета из XML.", "Корневой файл выгрузки: C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\exec_extproc-file_marker_cp1251.txt", "Целевой каталог или файл: 앀诌Ɵ", "", "Файл 'file://C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\exec_extproc-file_marker_cp1251.txt' не является файлом обработки или отчета."] | нет |
-| extproc-noarg | `/DisableStartupDialogs /LoadExternalDataProcessorOrReportFromFiles` | 1 | 2.0 | 200 | ["Загрузка внешней обработки или отчета из XML.", "Корневой файл выгрузки: 쁹ƹ", "Целевой каталог или файл: 쁹ƹ", "", ""] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| enterprise-runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_enterprise-runscript_marker_cp1251.txt` | 1 | 2.0 | 107 | ["Запрещено использование окон. Передан ключ DisableStartupDialogs."] | нет |
+| runscript | `/DisableStartupDialogs /RunScript <tmp>\p1c_effektivnost\exec_runscript_marker_cp1251.txt` | 1 | 2.0 | 3 | [] | нет |
+| testclient-file | `/DisableStartupDialogs /TESTCLIENT <tmp>\p1c_effektivnost\exec_testclient-file_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
+| testfile-flag | `/DisableStartupDialogs -testFile <tmp>\p1c_effektivnost\exec_testfile-flag_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
+| testout-flag | `/DisableStartupDialogs -testOut <tmp>\p1c_effektivnost\exec_testout-flag_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
+| testmanager-file | `/DisableStartupDialogs /TESTMANAGER <tmp>\p1c_effektivnost\exec_testmanager-file_marker_cp1251.txt` | 1 | 30.3 | 0 | [] | таймаут |
+| extproc-file | `/DisableStartupDialogs /LoadExternalDataProcessorOrReportFromFiles <tmp>\p1c_effektivnost\exec_extproc-file_marker_cp1251.txt` | 1 | 2.0 | 475 | ["Загрузка внешней обработки или отчета из XML.", "Корневой файл выгрузки: <tmp>\\p1c_effektivnost\\exec_extproc-file_marker_cp1251.txt", "Целевой каталог или файл: \uc540\u8bcc\u019f", "", "Файл 'file://<tmp>\\p1c_effektivnost\\exec_extproc-file_marker_cp1251.txt' не является файлом обработки или отчета."] | нет |
+| extproc-noarg | `/DisableStartupDialogs /LoadExternalDataProcessorOrReportFromFiles` | 1 | 2.0 | 200 | ["Загрузка внешней обработки или отчета из XML.", "Корневой файл выгрузки: \ue540\uc079\u01b9", "Целевой каталог или файл: \ue540\uc079\u01b9", "", ""] | нет |
 | jobs-allow | `/DisableStartupDialogs /AllowExecuteScheduledJobs` | 1 | 30.3 | 0 | [] | таймаут |
 | testonly-flag | `/DisableStartupDialogs -TestOnly` | 1 | 30.3 | 0 | [] | таймаут |
 | testclient-plain | `/DisableStartupDialogs /TESTCLIENT` | 1 | 30.3 | 0 | [] | таймаут |
@@ -312,7 +315,7 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| dumpproc-args | `/DisableStartupDialogs /DumpExternalDataProcessorOrReportToFiles C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_dumpproc-args_marker_utf8.txt C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 410 | ["Выгрузка внешней обработки или отчета в XML.", "Входной бинарный файл: C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\no-such-directory", "Каталог или корневой файл выгрузки: C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\exec_dumpproc-args_marker_utf8.txt", "Формат: Иерархический", ""] | нет |
+| dumpproc-args | `/DisableStartupDialogs /DumpExternalDataProcessorOrReportToFiles <tmp>\p1c_effektivnost\exec_dumpproc-args_marker_utf8.txt <tmp>\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 410 | ["Выгрузка внешней обработки или отчета в XML.", "Входной бинарный файл: <tmp>\\p1c_effektivnost\\no-such-directory", "Каталог или корневой файл выгрузки: <tmp>\\p1c_effektivnost\\exec_dumpproc-args_marker_utf8.txt", "Формат: Иерархический", ""] | нет |
 
 ### exec-14-extproc-twoargs.json — /LoadExternalDataProcessorOrReportFromFiles с двумя путями
 - `executed_variants` = []
@@ -323,7 +326,7 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| extproc-twoargs | `/DisableStartupDialogs /LoadExternalDataProcessorOrReportFromFiles C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\exec_extproc-twoargs_marker_utf8.txt C:\Users\goof0\AppData\Local\Temp\opencode\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 546 | ["Загрузка внешней обработки или отчета из XML.", "Корневой файл выгрузки: C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\exec_extproc-twoargs_marker_utf8.txt", "Целевой каталог или файл: C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\no-such-directory", "", "Файл 'file://C:\\Users\\goof0\\AppData\\Local\\Temp\\opencode\\p1c_effektivnost\\exec_extproc-twoargs_marker_utf8.txt' не является файлом обработки или отчета."] | нет |
+| extproc-twoargs | `/DisableStartupDialogs /LoadExternalDataProcessorOrReportFromFiles <tmp>\p1c_effektivnost\exec_extproc-twoargs_marker_utf8.txt <tmp>\p1c_effektivnost\no-such-directory` | 1 | 2.0 | 546 | ["Загрузка внешней обработки или отчета из XML.", "Корневой файл выгрузки: <tmp>\\p1c_effektivnost\\exec_extproc-twoargs_marker_utf8.txt", "Целевой каталог или файл: <tmp>\\p1c_effektivnost\\no-such-directory", "", "Файл 'file://<tmp>\\p1c_effektivnost\\exec_extproc-twoargs_marker_utf8.txt' не является файлом обработки или отчета."] | нет |
 
 ### exec-16-modes.json — лестница MODE_LADDER: режим запуска программы
 - `executed_variants` = []
@@ -339,8 +342,8 @@
 
 | вариант | хвост командной строки после `<программа> DESIGNER /F <иб> /Out <файл>` | код | сек | байт в /Out | строки /Out (дословный список) | маркер BSL |
 |---|---|---|---|---|---|---|
-| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
-| config-load-ok | `/DisableStartupDialogs /LoadConfigFromFiles C:\Users\goof0\Documents\REA\Platform1C\effektivnost-otdela\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
+| load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
+| config-load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
 
 ## Что с этим делать (сводный список плана оптимизации p1c)
 

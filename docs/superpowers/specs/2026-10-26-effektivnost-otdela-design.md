@@ -39,7 +39,7 @@ BSL, каждая форма и каждая схема компоновки п�
 | `CREATEINFOBASE File=<путь> /Out <файл> /DisableStartupDialogs` | код 0, 2.0–5.2 с, база создана |
 | `DESIGNER /F <база> /Out <файл> /DisableStartupDialogs /LoadConfigFromFiles <каталог>` на реальной конфигурации (239 файлов) | код 0, 4.0 с |
 | Тот же флаг на минимальной рукописной конфигурации с ошибкой в свойстве `Content` подсистемы | код 1, вывод «Ошибка XDTO в файле … при чтении свойства: Content», загрузка **не выполнена целиком**: выгрузка вернула пустую конфигурацию платформы (`Name=Конфигурация`, только `Language.Русский`) |
-| `/CheckModules` с ключами `-Server -ThinClient -WebClient -ExternalConnection -ThickClientOrdinaryApplication` | код 101, UTF-8 c BOM, настоящие диагностики: `ОбщийМодуль.ГПН_ИИ_ДействияСОтветомКлиент.Модуль(206,10)`: «Процедура или функция с указанным именем не определена (ПрочитатьJSON)» |
+| `/CheckModules` с ключами `-Server -ThinClient -WebClient -ExternalConnection -ThickClientOrdinaryApplication` | код 101, UTF-8 с BOM, настоящие диагностики: `ОбщийМодуль.ГПН_ИИ_ДействияСОтветомКлиент.Модуль(206,10)`: «Процедура или функция с указанным именем не определена (ПрочитатьJSON)» |
 | `/CheckModules` на пустой конфигурации | код 0, «Синтаксических ошибок не обнаружено!» — проверка на пустой конфигурации тривиальна и ничего не подтверждает |
 | `/DumpConfigToFiles <каталог>` | код 0, 2.0 с, `ConfigDumpInfo.xml` (`<ConfigVersions/>` у пустой базы) и `Configuration.xml` канонической формы (7 блоков `InternalInfo`, полный список свойств по умолчанию, `UsedMobileApplicationFunctionalities`) |
 | Кодирование файлов платформы | UTF-8 **с BOM**, CRLF; файлы EDT (исходник «ИИ Чат 1С\Project`) — декларация `<?xml version='1' … standalone='yes'?>` с одинарными кавычками |
