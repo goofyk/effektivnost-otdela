@@ -604,7 +604,8 @@
   в шести корпусах 0. Неиспробованные кандидаты headless-проверки модулей: `/CheckConfig`,
   `/CheckModules`, `-ExtendedModulesCheck`, `-WarningsAsErrors`, `-Module`, `-NBegin`, `-NEnd`,
   `-ReportFile`, `-ReportFormat`, `-ReportType`, `-EmptyHandlers`, `-UnreferenceProcedures`,
-  `-HandlersExistence`.
+  `-HandlersExistence`. (Список записи на конец итерации 8: эти кандидаты опробованы замером 25,
+  см. раздел «Итерация 9» ниже.)
 - Валидность SKD-запроса отчёта на платформе не измерена (только статика `p1c.check.sdbl`); что
   платформа делает с директивой `&Сервер` — не измерено.
 - Модификаторы доступа неотличимы от базовой загрузки (`auth_differs_from_baseline []`);
@@ -659,3 +660,93 @@
   оптимизации инструментов разбит на блоки A–G. Граница меры (нет подтверждённого headless-исполнения
   BSL; модификаторы доступа и `PredefinedDataUpdate` наблюдаемо неотличимы от их отсутствия)
   зафиксирована в разделе «Открытая граница» выше и в `docs/слепые-пятна.md`.
+
+## Итерация 9 (замер 25: имена группы проверки headless — `/CheckModules` и `/CheckConfig`)
+
+- Мера: накопительная лестница из 22 шагов под `/CheckModules` (`CHECK_LADDER`) и её полное зеркало
+  под `/CheckConfig` (`CHECKCMD_LADDER`, база — тот же канон `check-config-base`): шаг `base` =
+  `CHECK_TAIL_BASE` (пять флагов доступа из `ib_loop.CHECK_KEYS`), шаги 2–8 наращивают цепь
+  `-ConfigLogIntegrity -IncorrectReferences -DistributiveModules -UnreferenceProcedures
+  -HandlersExistence -EmptyHandlers -ExtendedModulesCheck` (порядок — канон корпуса БСП
+  `DataProcessors/ПроверкаБСППередСборкой/Forms/Форма/Ext/Form/Module.bsl`), шаг 9 добавляет
+  `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report`, шаги 10–22 = тот же 14-токенный префикс
+  плюс ровно одно новое имя. Имена взяты только из замера `p1c/src/p1c/data/test_cli_flags.json`
+  (426 имён в `files[].names`) и окна соседства `reports/flags-24-checkgroups.json`; значения
+  `-ReportFormat` (`mxl`, `txt`) и `-ReportType` (`Brief`, `ByObjectNames`, `ByObjectIDs`) — из того
+  же окна, третий вариант каждого значения и значения `-NBegin`, `-NEnd`, `-Module` — заведомо
+  вымышленные (`ZzzNetakogoZnacheniyaNet`).
+- Прогоны: 132 прогона лестниц — 44 на чистой ИБ `<tmp>\p1c_effektivnost\probe_ib`, 44 на битой
+  func-ИБ, 44 на битой form-ИБ (по одному прогону за раз, `rc 0` у всех шести артефактов), плюс
+  6 шагов `ib_loop` сборки трёх битых ИБ; 353.4 с времени платформы, 0 таймаутов,
+  `check_rejected []`, `check_silent_variants []`. Лестница только читает ИБ — `--allow-mutating`
+  не понадобился, ИБ гейта gate-14 не тронута, модифицирующие прогоны шли только на `probe_ib`
+  и на отдельных `broken_ib_*`.
+- Находки чистой ИБ (раздел 10): `/CheckModules` — 22 шага, код `[0]`, 73 байта
+  `Синтаксических ошибок не обнаружено!`, один и тот же `/Out` (хеш `0ca69e`) на всех шагах,
+  0 строк объекта, 2.0–7.3 с; `/CheckConfig` — коды `[0, 101]`, 43 байта `Ошибок не обнаружено`
+  (7 шагов, хеш `1400ce`, 0 строк объекта) против 340 байт и кода 101 (15 шагов, хеш `d92f21`,
+  2 строки `ВидОбъекта.ИмяОбъекта`), 2.0–14.2 с. Единственный токен, меняющий вердикт, —
+  `-ExtendedModulesCheck`; `-ReportFile` запрошен 28 раз (14 шагов из 22 на каждой лестнице) —
+  `check_report_files []`.
+- Битые ИБ (`scripts/mutate.py`: `unknown_function_call`, `form_missing_handler`,
+  `subsystem_bad_content`; рецепт — `<tmp>\make_broken_cfg.py` (31 файл копии `cfg`) затем
+  `python scripts/ib_loop.py --ib <tmp>\p1c_effektivnost\broken_ib_<вид> --cfg <копия>
+  --steps create,load`): первые две — `create` код 0 (195 байт) и `load` код 0 (3 байта),
+  `steps done: 4` вместе с лестницами; третья — `load` код 1, 177 байт, две строки
+  `Неизвестный объект метаданных - Catalog.ТакогоНет` (`broken_loop_subsystem.json`,
+  `platform_errors [1]`), лестница на ней не прогоняется: дефект ссылки виден уже из шага загрузки.
+- Оракул измерен (раздел 11): `/CheckConfig` с `-ExtendedModulesCheck` на func-ИБ — код 101,
+  501 байт, хеш `e6482f`, 3 строки объекта, третья — дословно `Документ.ФактРаботы.МодульОбъекта
+  Возможно ошибочный метод: "ПроверитьЧасыДокумента"` (именно про введённый вызов). На form-ИБ
+  границу находки держит `-HandlersExistence`: код 101, 195 байт, хеш `246bb9`, одна строка
+  `Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма
+  "ПриСозданииНаСервере"` (два пробела после двоеточия — дословно), `-EmptyHandlers` поверх него
+  даёт побайтово тот же `/Out`; 15 шагов с `-ExtendedModulesCheck` — код 101, 532 байта, хеш
+  `debd25`. На той же битой ИБ тот же флаг под `/CheckModules` — код 0, 73 байта, 0 строк объекта:
+  `/CheckModules` читает синтаксис, а не содержание; `check_defect_found` 17 шагов (form-ИБ) и 15
+  (func-ИБ) против `check_no_defects` 22 у `/CheckModules`.
+- Дисциплина предсказаний: по 8 предсказаний на лестницу (16 на замер) записаны в `PREDICTIONS` до
+  прогонов по чистой ИБ и не переписывались; на битых ИБ они работают как оракул —
+  `predictions_held` 8/8/7/7/5, `predictions_broken` = ["check-config-extended"] на func-ИБ и
+  ["check-config-handlers", "check-config-emptyhandlers", "check-config-extended"] на form-ИБ;
+  `predictions_unresolved []` и `prediction_sources_ok true` во всех шести артефактах.
+- Артефакты (в `.gitignore`; числа и дословные строки — только из них): `reports/check-25-clean.json`,
+  `check-25-clean-checkconfig.json`, `check-25-broken-func.json`,
+  `check-25-broken-func-checkconfig.json`, `check-25-broken-form.json`,
+  `check-25-broken-form-checkconfig.json` (по 22 шага). Таблицы раздела 12 сгенерированы
+  `<tmp>\gen_check_tables.py` и вставлены `<tmp>\splice_check_tables.py` (анкор проверен на
+  единственность, CRLF сохранены); сравнение чистый↔битый — `<tmp>\dump_broken_cmp.py` и
+  `<tmp>\dump_broken_cmp2.py` (в нём же `argv` каждого шага, хеши `/Out` и предсказания).
+- Код контура: `scripts/exec_probe.py` (2041 строка, 171 654 байта) — `--checkkeys`,
+  `--checkconfig`, `CHECK_LADDER`/`CHECKCMD_LADDER`, `CHECK_OPTION_NAMES` (2 имени команд +
+  7 корпусных флагов + 8 нецитированных имён), `check_verdict` (вердикты `clean`, `defects`,
+  `no_verdict`, `refused`), `check_observation`; `tests/test_exec_probe.py` (1544 строки,
+  105 559 байтов) — `TestCheckLadder` (21 тест). Проверки: `python -m unittest discover -s tests`
+  → `Ran 282 tests … OK` (код 0), `python probe/render_query_tables.py --check` →
+  `fragments: 28 checked lines: 680`, `unused fragments: none`.
+- Документы: `docs/evidence/exec-modes-and-negatives.md` (901 строка, 108 381 байт) — раздел 10
+  (находки чистой ИБ), раздел 11 (ожидания, записанные до прогонов → результат), раздел 12
+  (шесть таблиц артефактов), два новых пункта финального списка; `docs/план-оптимизации-p1c.md`
+  (126 строк) — новая строка E9 и переписанная строка C10 (направление закрыто измерением,
+  встраивание вывода осталось задачей); `docs/итог-боевой-проверки.md` (247 строк) — список
+  неиспробованных кандидатов заменён измеренным; `docs/слепые-пятна.md` (293 строки) — пункт §15
+  про headless-проверку переписан на измеренное, к оценке границы добавлена лестница группы
+  проверки (17 имён, 132 прогона).
+- Контроль текстов после правок: rg-проходы CJK (`--pcre2`, находок нет) и склейки латиницы с
+  кириллицей (`[A-Za-z]{4,}[а-яё]{2,}|[а-яё]{2,}[A-Za-z]{4,}` — у четырёх изменённых документов 0),
+  обход `<tmp>\doc_scan_all.py` по 20 файлам `docs/**/*.md`: `abs=0`, `cjk=0` у всех; исправлены
+  три опечатки раздела 10 («разбор строк», «машинно читается», «восьми нецитированных имён») и
+  одна ошибка счёта предсказаний в разделе 11 (16 на лестницу → по 8 на лестницу). Строки
+  `scripts/exec_probe.py` и `tests/test_exec_probe.py` — 115 и 104 символа максимум, BOM нет,
+  перевод строк LF.
+- Открытая граница после итерации 9 (заменила список неиспробованных кандидатов границы итерации
+  8): исполнить BSL по-прежнему нельзя; модификаторы доступа и влияние `PredefinedDataUpdate`
+  неотличимы; регистронезависимость `-listFile` против `-listfile` не измерена; из имён группы
+  проверки наблюдаемого различия не дают `-IncorrectReferences`, `-ConfigLogIntegrity`,
+  `-DistributiveModules`, `-UnreferenceProcedures` и `-EmptyHandlers` (поодиночке — 43 байта
+  `Ошибок не обнаружено` и на чистой, и на обеих битых ИБ), регистронезависимость их написаний не
+  измерена, содержимое отчёта `-ReportFile` не получено ни разу (84 запроса), а дефект ссылки
+  метаданных headless-командой проверки не измеряется — ИБ с ним не загружается (код 1).
+- Закоммичено в `aebe547` (`6 files changed, 1837 insertions(+), 21 deletions(-)`):
+  `scripts/exec_probe.py`, `tests/test_exec_probe.py` и четыре документа. Этот журнал — отдельный
+  коммит.
