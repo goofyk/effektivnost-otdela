@@ -1,0 +1,152 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<DataCompositionSchema xmlns="http://v8.1c.ru/8.1/data-composition-system/schema" xmlns:dcscom="http://v8.1c.ru/8.1/data-composition-system/common" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<dataSource>
+		<name>ИсточникДанных1</name>
+		<dataSourceType>Local</dataSourceType>
+	</dataSource>
+	<dataSet xsi:type="DataSetQuery">
+		<name>НаборДанных1</name>
+		<field xsi:type="DataSetFieldField">
+			<dataPath>Сотрудник</dataPath>
+			<field>Сотрудник</field>
+			<role>
+				<dcscom:dimension>true</dcscom:dimension>
+			</role>
+		</field>
+		<field xsi:type="DataSetFieldField">
+			<dataPath>СотрудникНаименование</dataPath>
+			<field>СотрудникНаименование</field>
+			<title xsi:type="v8:LocalStringType">
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Сотрудник</v8:content>
+				</v8:item>
+			</title>
+		</field>
+		<field xsi:type="DataSetFieldField">
+			<dataPath>Грейд</dataPath>
+			<field>Грейд</field>
+		</field>
+		<field xsi:type="DataSetFieldField">
+			<dataPath>Ставка</dataPath>
+			<field>Ставка</field>
+			<title xsi:type="v8:LocalStringType">
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Ставка FTE</v8:content>
+				</v8:item>
+			</title>
+		</field>
+		<field xsi:type="DataSetFieldField">
+			<dataPath>ПланЧасы</dataPath>
+			<field>ПланЧасы</field>
+			<title xsi:type="v8:LocalStringType">
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>План, ч</v8:content>
+				</v8:item>
+			</title>
+		</field>
+		<field xsi:type="DataSetFieldField">
+			<dataPath>ФактЧасы</dataPath>
+			<field>ФактЧасы</field>
+			<title xsi:type="v8:LocalStringType">
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Факт, ч</v8:content>
+				</v8:item>
+			</title>
+		</field>
+		<dataSource>ИсточникДанных1</dataSource>
+		<query>ВЫБРАТЬ
+	ПланЗагрузки.Сотрудник КАК Сотрудник,
+	СУММА(ПланЗагрузки.ПланЧасы) КАК ПланЧасы
+ПОМЕСТИТЬ втПланИтог
+ИЗ
+	РегистрСведений.ПланЗагрузки КАК ПланЗагрузки
+СГРУППИРОВАТЬ ПО
+	ПланЗагрузки.Сотрудник;
+
+////////////////////////////////////////////////////////////////////////////////
+ВЫБРАТЬ
+	ЗатратыВремени.Сотрудник КАК Сотрудник,
+	СУММА(ЗатратыВремени.Часы) КАК Часы
+ПОМЕСТИТЬ втФактИтог
+ИЗ
+	РегистрНакопления.ЗатратыВремени КАК ЗатратыВремени
+СГРУППИРОВАТЬ ПО
+	ЗатратыВремени.Сотрудник;
+
+////////////////////////////////////////////////////////////////////////////////
+ВЫБРАТЬ
+	Сотрудники.Ссылка КАК Сотрудник,
+	Сотрудники.Наименование КАК СотрудникНаименование,
+	Сотрудники.Грейд КАК Грейд,
+	Сотрудники.Ставка КАК Ставка,
+	ЕСТЬNULL(ПланИтог.ПланЧасы, 0) КАК ПланЧасы,
+	ЕСТЬNULL(ФактИтог.Часы, 0) КАК ФактЧасы
+ИЗ
+	Справочник.Сотрудники КАК Сотрудники
+		ЛЕВОЕ СОЕДИНЕНИЕ втПланИтог КАК ПланИтог
+		ПО Сотрудники.Ссылка = ПланИтог.Сотрудник
+		ЛЕВОЕ СОЕДИНЕНИЕ втФактИтог КАК ФактИтог
+		ПО Сотрудники.Ссылка = ФактИтог.Сотрудник
+ГДЕ
+	НЕ Сотрудники.ЭтоГруппа
+
+УПОРЯДОЧИТЬ ПО
+	СотрудникНаименование</query>
+	</dataSet>
+	<calculatedField>
+		<dataPath>КоэффициентЗагрузки</dataPath>
+		<expression>ВЫБОР КОГДА ПланЧасы = 0 ТОГДА 0 ИНАЧЕ Окр(ФактЧасы * 100 / ПланЧасы, 2) КОНЕЦ</expression>
+		<title xsi:type="v8:LocalStringType">
+			<v8:item>
+				<v8:lang>ru</v8:lang>
+				<v8:content>Загрузка, %</v8:content>
+			</v8:item>
+		</title>
+	</calculatedField>
+	<settingsVariant>
+		<dcsset:name>Основной</dcsset:name>
+		<dcsset:presentation xsi:type="xs:string">Основной</dcsset:presentation>
+		<dcsset:settings xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows">
+			<dcsset:selection>
+				<dcsset:item xsi:type="dcsset:SelectedItemField">
+					<dcsset:field>СотрудникНаименование</dcsset:field>
+				</dcsset:item>
+				<dcsset:item xsi:type="dcsset:SelectedItemField">
+					<dcsset:field>Грейд</dcsset:field>
+				</dcsset:item>
+				<dcsset:item xsi:type="dcsset:SelectedItemField">
+					<dcsset:field>Ставка</dcsset:field>
+				</dcsset:item>
+				<dcsset:item xsi:type="dcsset:SelectedItemField">
+					<dcsset:field>ПланЧасы</dcsset:field>
+				</dcsset:item>
+				<dcsset:item xsi:type="dcsset:SelectedItemField">
+					<dcsset:field>ФактЧасы</dcsset:field>
+				</dcsset:item>
+				<dcsset:item xsi:type="dcsset:SelectedItemField">
+					<dcsset:field>КоэффициентЗагрузки</dcsset:field>
+				</dcsset:item>
+			</dcsset:selection>
+			<dcsset:order>
+				<dcsset:item xsi:type="dcsset:OrderItemField">
+					<dcsset:field>СотрудникНаименование</dcsset:field>
+					<dcsset:orderType>Asc</dcsset:orderType>
+				</dcsset:item>
+			</dcsset:order>
+			<dcsset:outputParameters>
+				<dcscor:item xsi:type="dcsset:SettingsParameterValue">
+					<dcscor:parameter>ГоризонтальноеРасположениеОбщихИтогов</dcscor:parameter>
+					<dcscor:value xsi:type="dcscor:DataCompositionTotalPlacement">None</dcscor:value>
+				</dcscor:item>
+				<dcscor:item xsi:type="dcsset:SettingsParameterValue">
+					<dcscor:parameter>ВертикальноеРасположениеОбщихИтогов</dcscor:parameter>
+					<dcscor:value xsi:type="dcscor:DataCompositionTotalPlacement">End</dcscor:value>
+				</dcscor:item>
+			</dcsset:outputParameters>
+		</dcsset:settings>
+	</settingsVariant>
+</DataCompositionSchema>
