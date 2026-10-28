@@ -134,14 +134,242 @@
 его надо фиксировать в самих вызовах (загрузка конфигурации работает и в `CONFIG`), а различие
 режимов доказывать формой вызова, а не исходом.
 
-## 10. Дословные таблицы прогонов
+## 10. Группа проверки: `/CheckModules` и `/CheckConfig` приняты, одно имя меняет вердикт
+
+**Что мерили.** Две зеркальные лестницы по 22 шага: `CHECK_LADDER` (команда
+`/CheckModules`) и `CHECKCMD_LADDER` (команда `/CheckConfig`) — те же 22 суффикса, различие
+только в токене команды (`check_mirror_same_tail = true`,
+`check_mirror_differs_by_command_only = true`). Имена взяты только из замера
+`p1c/src/p1c/data/test_cli_flags.json`: 17 имён группы проверки — 2 команды, 7 имён,
+цитированных в шести корпусах, и 8 имён, в корпусах не цитированных. Значения либо с
+читаемым источником (`mxl`, `txt`, `Brief`, `ByObjectNames`, `ByObjectIDs`,
+`-Module=РасчётПоказателей`), либо выдуманные явно (`ZzzNetakogoZnacheniyaNet`). Шаг 1 —
+канон `CHECK_KEYS` из `scripts/ib_loop.py` (5 флагов доступа); шаги 2–8 добавляют по одному
+корпусному флагу; шаг 9 добавляет `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report`;
+шаги 10–22 добавляют ровно один новый токен (`ladder_single_command_token = true`,
+`ladder_multi_token_steps = []`). Прогоны только на чистой ИБ `<tmp>\p1c_effektivnost\probe_ib`
+и на битой (раздел 11), ни один вариант проверки не меняющий (`ib_side_effects_possible =
+false`, `ladder_mutating_variants = []`), поэтому без `--allow-mutating`.
+
+**Как читался вердикт.** `check_verdict(code, object_line_count)`: `defects` — в `/Out` есть
+строки вида `ВидОбъекта.ИмяОбъекта`; `clean` — код `CHECK_CLEAN_CODE = 0` без таких строк;
+`no_verdict` — код `CHECK_DEFECT_CODE = 101` без таких строк; `refused` — прочие коды.
+Код 101 — не отказ и не падение: это «проверка нашла», семантика кодов и разбор строк —
+по корпусу `DataProcessors/ПроверкаБСППередСборкой/Forms/Форма/Ext/Form/Module.bsl`
+(2944–2973 — форма команды, 2996–3027 — разбор строк результата).
+
+**Все 44 имени приняты.** На каждой лестнице `check_accepted` — 22 из 22,
+`check_rejected = []`, `check_timed_out = []`, `check_silent_variants = []`,
+`check_no_verdict = []`: каждый шаг кончился сам (2.0–14.2 с) и дал читаемый вердикт. Для
+сравнения — отрицательные контроли той же платформы: `-ZzzNetakoyKomandyNet` вешает процесс
+(таймаут 60.3 с, 0 байт), `/ZzzNetakoyKomandyNet` даёт код 1 и 70 байт
+«Пользователь ИБ не идентифицирован» (раздел 5). Ни одного такого исхода у имён группы
+проверки нет.
+
+**`/CheckModules`: один текст на все 22 шага.** Коды `[0]`, байты `[73]`, один уникальный
+текст `/Out` на все 22 шага — дословно `Синтаксических ошибок не обнаружено!`, хеш `/Out`
+одинаков на всех 22 шагах (`0ca69e`), `check_object_line_count` = 0 у каждого шага,
+`check_no_defects` = 22, `check_defect_found = []`. Ни один из шести корпусных флагов и ни
+одно из восьми нецитированных имён не меняют ни кода, ни текста, ни длины.
+
+**`/CheckConfig`: ровно один токен меняет вердикт.** Текстов два: 43 байта
+`Ошибок не обнаружено` (код 0, хеш `1400ce`) и 340 байт (код 101, хеш `d92f21`, по 2 строки
+объекта). Граница — `-ExtendedModulesCheck`: семь шагов до неё (`base`,
+`-ConfigLogIntegrity`, `-IncorrectReferences`, `-DistributiveModules`,
+`-UnreferenceProcedures`, `-HandlersExistence`, `-EmptyHandlers`) дают 0; шаг
+`check-config-extended` и все 14 идущих за ним шагов дают 101 с теми же двумя строками:
+
+- `Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"`
+- `Обработка.ВыгрузкаЗатратCSV.Форма.ФормаВыгрузки.Форма Возможно ошибочный метод:
+  "СформироватьТекстВыгрузки"`
+
+`check_defect_found` = 15, `check_no_defects` = 7, всего строк объекта 30. Шаги 10–22
+строятся на префиксе, где `-ExtendedModulesCheck` уже есть, поэтому «нет различия» для восьми
+нецитированных имён читается относительно шага `*-reportfile`: код, длина `/Out`, хеш
+`/Out` и число строк объекта на всех 14 шагах одинаковые.
+
+**Предсказания (16, по 8 на лестницу).** Шаг `base` предсказан по контрольному прогону
+gate-ИБ (`reports/gate-14.json`: `check_code 0`), остальные семь на лестнице — по корпусу
+(`corpora_ssl`: `DataProcessors/ПроверкаБСППередСборкой/Forms/Форма/Ext/Form/Module.bsl`).
+Сбылось 15 из 16: `predictions_held` = 8 на `/CheckModules` и 7 на `/CheckConfig`,
+`predictions_broken = ["check-config-extended"]` — мы ждали код 0, платформа дала 101.
+Предсказание записано до прогона и после замера не переписано; расходится только исход
+шага, дисциплина лестницы не пострадала (`prediction_sources_ok = true`,
+`check_unpredicted_matches_list = true`, `predictions_unresolved = []`).
+
+**`-ReportFile` файла не создаёт.** Имя отчёта запрошено на 14 шагах каждой лестницы
+(28 запросов), `check_report_files = []`, `report_siblings` пуст у всех 44 наблюдений, и
+скан каталога `<tmp>\p1c_effektivnost` не нашёл ни одного файла `*check_report*`. Значит у
+headless-проверки отчёт идёт только в `/Out`; `-ReportFormat` и `-ReportType` — и с
+корректными значениями (`mxl`, `txt`, `Brief`, `ByObjectNames`, `ByObjectIDs`), и с
+выдуманными — тоже не меняют текст.
+
+**Следствие для инструментов p1c.** Headless-аналог платформенной проверки метаданных
+существует и машинно читается: `/CheckConfig` с `-ExtendedModulesCheck` даёт вердикт
+(код 0 против 101) и построчный список `ВидОбъекта.ИмяОбъекта Возможно ошибочный метод:
+"..."`. `/CheckModules` — вердикт только про синтаксис («Синтаксических ошибок не
+обнаружено!»), подозрительных методов он не сообщает. Код 101 надо трактовать как «найдено»,
+а не как сбой (в `scripts/ib_loop.py` это уже зафиксировано: «101 с ними»). Восемь имён без
+цитат в корпусах (`-WarningsAsErrors`, `-noCheck`, `-Module`, `-NBegin`, `-NEnd`,
+`-ReportFile`, `-ReportFormat`, `-ReportType`) приняты платформой, но наблюдаемо ничего не
+меняют: обещать что-то от них в выводе `p1c` нельзя.
+
+## 11. Группа проверки на преднамеренно битой ИБ: ожидания (до прогонов) и результат
+
+### Ожидания, записанные до прогонов
+
+Рецепт битой ИБ (чтобы диагноз нельзя было объяснить чем-то другим): копия
+`cfg\ЭффективностьОтдела` → `python scripts/mutate.py <вид_поломки> <копия>` (одна поломка,
+исходник нетронутый) → `python scripts/ib_loop.py --ib
+<tmp>\p1c_effektivnost\broken_ib_<вид> --cfg <копия> --steps create,load` → те же две
+лестницы на этой ИБ, по одному прогону за раз, без `--allow-mutating`. Виды поломки и что
+именно они ломают — из `scripts/mutate.py`: `unknown_function_call` (в модуль объекта
+`Documents/ФактРаботы/Ext/ObjectModule.bsl` добавлен вызов
+`РасчётПоказателей.ПроверитьЧасыДокумента()`), `form_missing_handler` (из модуля формы
+`Catalogs/Сотрудники/Forms/ФормаЭлемента` удалена процедура `ПриСозданииНаСервере`,
+объявленная в `<Event name="OnCreateAtServer">`), `subsystem_bad_content` (в Content
+подсистемы ссылка `Catalog.Сотрудники` заменена на `Catalog.ТакогоНет`).
+
+1. **Базовая команда на битой ИБ молчит.** Ожидание: `/CheckModules` → код 0 и 73 байта
+   `Синтаксических ошибок не обнаружено!`; `/CheckConfig` с каноническим `CHECK_KEYS` → код 0
+   и 43 байта `Ошибок не обнаружено`; 0 строк `ВидОбъекта.ИмяОбъекта`. Источник: на чистой
+   ИБ эти шаги дают ровно так (раздел 10), а ни одна из трёх поломок синтаксис не ломает —
+   они ломают содержание модуля, соответствие события формы процедуре и ссылку в Content.
+2. **`-ExtendedModulesCheck` находит то, чего не видит база.** Ожидание: код 101 и не менее
+   одной строки `ВидОбъекта.ИмяОбъекта`, называющей сломанный объект (`Документ.ФактРаботы`
+   для вызова несуществующей функции, `Справочник.Сотрудники` для удалённого обработчика,
+   `Подсистема.ЭффективностьОтдела` для битой ссылки). Если этого не окажется, направление
+   закрывается как «расширенная проверка не различает чистую и битую конфигурацию».
+3. **`-IncorrectReferences` — кандидат на находку битой ссылки подсистемы** (имя говорит про
+   некорректные ссылки; цитата — тот же корпус `DataProcessors/ПроверкаБСППередСборкой`).
+4. **`-HandlersExistence` и `-EmptyHandlers` — кандидаты на находку удалённого обработчика**
+   (тот же корпус; поломка ровно в этом: событие формы без процедуры).
+5. **Восемь нецитированных имён — без ожидания.** В этом и смысл их замера: их исход обязан
+   совпасть с шагом `*-reportfile` (префикс уже содержит `-ExtendedModulesCheck`) либо стать
+   находкой. Любое различие у `-Module`, `-ReportFile`, `-ReportFormat`, `-ReportType`,
+   `-noCheck`, `-WarningsAsErrors`, `-NBegin`, `-NEnd` — наблюдение, а не подтверждение
+   чужого обещания.
+6. **Дисциплина не зависит от содержимого ИБ.** Ожидание: `check_rejected = []` и
+   `check_timed_out = []` и на битой ИБ — битое содержимое не влияет на то, примет ли
+   платформа имя флага; зависший шаг был бы находкой, а не поломкой обвязки.
+7. **Различие двух команд видно именно на битой ИБ.** Ожидание: на всех 22 шагах
+   `check-modules-*` код 0 и 0 строк объекта (вердикт про синтаксис), тогда как у
+   `check-config-*` с `-ExtendedModulesCheck` — 101 и строки объектов. Это и есть ответ на
+   C10: `/CheckModules` и `/CheckConfig` — не взаимозаменяемы.
+
+### Результат
+
+Три ИБ по рецепту выше: `unknown_function_call` и `form_missing_handler` дошли до лестниц
+(по 44 прогона на каждую), `subsystem_bad_content` до лестницы не дошла — платформа
+отказалась загружать битую конфигурацию. Всего по группе проверки: 132 прогона лестниц
+(44 на чистой ИБ, 44 на битой func, 44 на битой form) и 6 шагов `ib_loop`.
+
+Шаг сборки ИБ (`python scripts/ib_loop.py --ib <tmp>\p1c_effektivnost\broken_ib_<вид> --cfg
+<копия> --steps create,load`, дословные строки — `broken_loop_<вид>.json`):
+
+| поломка (`scripts/mutate.py`) | копия `cfg` | `create` | `load` |
+|---|---|---|---|
+| `unknown_function_call` | 31 файл | код 0, 2.0 с, 195 байт | код 0, 3.0 с, 3 байта |
+| `form_missing_handler` | 31 файл | код 0, 2.0 с, 195 байт | код 0, 3.0 с, 3 байта |
+| `subsystem_bad_content` | 31 файл | код 0, 1.0 с, 200 байт | **код 1**, 2.0 с, 177 байт: `Неизвестный объект метаданных - Catalog.ТакогоНет` (две строки) |
+
+**Ожидание 1 подтверждено.** На обеих дошедших до лестниц битых ИБ базовые шаги молчат ровно
+как на чистой: `/CheckModules` — 22 шага, код 0, 73 байта, хеш `/Out` `0ca69e`, 0 строк
+объекта (побайтово идентично чистой ИБ, все 44 прогона); `/CheckConfig` до `-HandlersExistence`
+— код 0, 43 байта, хеш `1400ce`, 0 строк объекта. Ни одна из поломок не ломает синтаксис, и
+`/CheckModules` это подтверждает: его вердикт про синтаксис, а не про содержание.
+
+**Ожидание 2 подтверждён на func-поломке.** Шаг `check-config-extended` на битой ИБ: код 101,
+501 байт (было 340), хеш `e6482f` (было `d92f21`), 3 строки объекта — две прежние и новая,
+именно про введённый вызов:
+
+- `Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"`
+- `Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "ПроверитьЧасыДокумента"`
+- `Обработка.ВыгрузкаЗатратCSV.Форма.ФормаВыгрузки.Форма Возможно ошибочный метод:
+  "СформироватьТекстВыгрузки"`
+
+Имена объектов в списке (`check_object_names`): `Документ.ФактРаботы`,
+`Обработка.ВыгрузкаЗатратCSV`. Таким образом расширенная проверка называет сломанный объект,
+а базовая — нет: различие чистой и битой конфигурации по `/CheckConfig` наблюдаемо.
+
+**Ожидание 4 подтверждён: граница сдвигается на `-HandlersExistence`.** На form-поломке шаг
+`check-config-handlers` (в префиксе уже есть `-ConfigLogIntegrity -IncorrectReferences
+-DistributiveModules -UnreferenceProcedures`, но ещё нет ни `-ExtendedModulesCheck`, ни
+`-EmptyHandlers`) даёт код 101 вместо 0, 195 байт вместо 43, хеш `246bb9` вместо `1400ce` и
+одну строку объекта — дословно, с двумя пробелами после двоеточия:
+
+- `Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"`
+
+`check-config-emptyhandlers` даёт побайтово тот же `/Out` (хеш `246bb9`), то есть
+`-EmptyHandlers` поверх `-HandlersExistence` наблюдаемо ничего не добавляет. Шаги, стоящие
+раньше (`-ConfigLogIntegrity`, `-IncorrectReferences`, `-DistributiveModules`,
+`-UnreferenceProcedures`), остались чистыми (43 байта, `1400ce`). И ключевое для C10: тот же
+флаг под `/CheckModules` (`check-modules-handlers`) на той же битой ИБ — код 0, 73 байта,
+0 строк объекта; `/CheckModules` отсутствующего обработчика не сообщает.
+
+**Ожидание 3 не измерено так, как задумано: ladder на этой поломке не прогоняется.**
+Ссылка подсистемы на `Catalog.ТакогоНет` делает конфигурацию незагружаемой — `load` кончается
+кодом 1 и двумя строками `Неизвестный объект метаданных - Catalog.ТакогоНет`, поэтому ИБ для
+лестницы отсутствует и `steps done: 1`. Следствие: этот класс дефектов `p1c` получает уже из
+шага загрузки (177 байт, код 1) без команды проверки; заодно `-IncorrectReferences` на обеих
+измеримых битых ИБ (func, form) молчит (43 байта, `1400ce`) — признака того, что флаг что-то
+проверяет headless, мы не нашли ни разу.
+
+**Ожидание 5 подтверждён в форме «нет находки».** Восемь нецитированных имён на битых ИБ дают
+`/Out`, побайтово совпадающий с шагом `*-reportfile`: на func-ИБ хеш `e6482f`, 501 байт,
+3 строки объекта; на form-ИБ хеш `debd25`, 532 байта, 3 строки объекта (там уже лежит находка
+обработчика, привнесённая префиксом). Ни одно из восьми имён не изменило код, длину, хеш или
+число строк объекта и на битой ИБ; `-ReportFile` по-прежнему не создал ни одного файла
+(`check_report_files = []` у всех шести артефактов, 84 запроса имени отчёта).
+
+**Ожидание 6 подтверждён.** На 88 прогонах по битым ИБ `check_accepted` = 22 из 22 на каждой
+лестнице, `check_rejected = []`, `check_timed_out = []`, `check_silent_variants = []`,
+`check_no_verdict = []`: битое содержимое ИБ не влияет на то, примет ли платформа имя флага.
+
+**Ожидание 7 подтверждён.** На обеих битых ИБ все 22 шага `check-modules-*` — код 0, 0 строк
+объекта (`check_defect_found = []`), тогда как у `check-config-*` находок 17 шагов на form-ИБ
+(`-HandlersExistence`, `-EmptyHandlers`, `-ExtendedModulesCheck` и 14 идущих за ними) и 15
+шагов на func-ИБ. `/CheckModules` и `/CheckConfig` не взаимозаменяемы, и видно это именно на
+битом содержимом.
+
+**Предсказания на битых ИБ.** Предсказания (по 8 на лестницу, 16 на замер из двух лестниц)
+записаны до прогонов по чистой ИБ
+и не переписывались; на битых ИБ они отрабатывают как тест-оракул:
+
+| артефакт | `predictions_held` | `predictions_broken` |
+|---|---|---|
+| `check-25-clean.json` / `check-25-broken-form.json` | 8 | [] |
+| `check-25-broken-func.json` | 8 | [] |
+| `check-25-clean-checkconfig.json` | 7 | ["check-config-extended"] |
+| `check-25-broken-func-checkconfig.json` | 7 | ["check-config-extended"] |
+| `check-25-broken-form-checkconfig.json` | 5 | ["check-config-handlers", "check-config-emptyhandlers", "check-config-extended"] |
+
+Три опровергнутых предсказания на form-ИБ — это и есть находка: мы ждали, что `-HandlersExistence`
+и `-EmptyHandlers` молчат (так было на чистой и на func-ИБ), а они нашли удалённый обработчик.
+`predictions_unresolved = []` и `prediction_sources_ok = true` во всех шести артефактах.
+
+**Следствие для инструментов p1c.** Появился воспроизводимый оракул для проверки метаданных:
+`/CheckConfig` с `-ExtendedModulesCheck` или с `-HandlersExistence` на битой ИБ даёт код 101 и
+построчный список `ВидОбъекта.ИмяОбъекта …` с именем сломанного объекта, а на чистой ИБ —
+код 0 и 43 байта `Ошибок не обнаружено`. Значит `p1c` может различать «проверка нашла» и
+«проверка чиста» по коду и по строкам `/Out`, а `-IncorrectReferences`, `-EmptyHandlers`,
+`-UnreferenceProcedures`, `-DistributiveModules`, `-ConfigLogIntegrity` поодиночке такого
+различия не дают ни на чистой, ни на битой конфигурации. `/CheckModules` остаётся вердиктом
+только про синтаксис: 73 байта `Синтаксических ошибок не обнаружено!` на всех 66 прогонах
+группы.
+
+## 12. Дословные таблицы прогонов
 
 Таблицы собраны генератором `exec_tables.py` (одноразовый скрипт вне репозитория) из
 тех же отчётов, из которых собран текст выше; в колонке `маркер BSL` стоит `нет`, если
 строка `P1C-EXEC-MARKER` не появилась ни в `/Out`, ни в консоли, и `таймаут`, если процесс
 был прерван нашим таймаутом. Дословные подписи аргументов живут в колонке «строки /Out»:
 именно они, а не наши формулировки, доказывают, как платформа прочитала команду. Длинные
-значения агрегатов помечены `…(обрезано)`.
+значения агрегатов помечены `…(обрезано)`. Таблицы шести артефактов лестницы проверки
+(`check-25-*.json`) собраны вторым генератором — `gen_check_tables.py` (также вне
+репозитория): там колонка `вердикт` печатает `check_verdict` из `scripts/exec_probe.py`,
+колонка `строк объекта` считает строки `ВидОбъекта.ИмяОбъекта`, а колонка `токен шага`
+показывает ровно тот один токен, которым шаг отличается от предыдущего.
 
 ### exec-12-programs.json — формы запуска: /RunScript с разными написаниями скрипта
 - `executed_variants` = []
@@ -345,6 +573,310 @@
 | load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
 | config-load-ok | `/DisableStartupDialogs /LoadConfigFromFiles <repo>\cfg\ЭффективностьОтдела` | 0 | 2.0 | 3 | [] | нет |
 
+### check-25-clean.json — лестница CHECK_LADDER: команда `/CheckModules`, 22 шага имён группы проверки, на чистой ИБ
+- `check_accepted` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_defect_found` = []
+- `check_mirror_differs_by_command_only` = true
+- `check_mirror_same_tail` = true
+- `check_no_defects` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_no_verdict` = []
+- `check_object_line_count` = {"check-modules-base": 0, "check-modules-configlog": 0, "check-modules-distributive": 0, "check-modules-emptyhandlers": 0, "check-modules-extended": 0, "check-modules-handlers": 0, "check-modules-module": 0, "check-modules-module-bogus": 0, "check-modules-nbegin": 0, "check-modules-nend": 0, "check-modules-nocheck": 0, "check-modules-references": 0, "check-modules-reportfile": 0, "check-modules...]
+- `check_object_names` = {}
+- `check_predicted_steps` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-references", "check-modules-unreferenced"]
+- `check_rejected` = []
+- `check_report_files` = []
+- `check_silent_variants` = []
+- `check_timed_out` = []
+- `check_trace_variants` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_unpredicted_matches_list` = true
+- `check_unpredicted_steps` = ["check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-reportformat-mxl", "check-modules-reportformat-txt", "check-modules-reporttype-bogus", "check-modules-reporttype-brief", "check-modules-reporttype-ids", "check-modules-reporttype-names", "chec...]
+- `check_verdicts` = {"check-modules-base": "clean", "check-modules-configlog": "clean", "check-modules-distributive": "clean", "check-modules-emptyhandlers": "clean", "check-modules-extended": "clean", "check-modules-handlers": "clean", "check-modules-module": "clean", "check-modules-module-bogus": "clean", "check-modules-nbegin": "clean", "check-modules-nend": "clean", "check-modules-nocheck": "clean", "check-mod...]
+- `predictions_broken` = []
+- `predictions_held` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-references", "check-modules-unreferenced"]
+- `predictions_unresolved` = []
+
+| вариант | токен шага | код | вердикт | сек | байт в /Out | строк объекта | файл `-ReportFile` |
+|---|---|---|---|---|---|---|---|
+| `check-modules-base` | `канон CHECK_KEYS (5 флагов доступа)` | 0 | clean | 3.1 | 73 | 0 | — |
+| `check-modules-configlog` | `-ConfigLogIntegrity` | 0 | clean | 7.3 | 73 | 0 | — |
+| `check-modules-references` | `-IncorrectReferences` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-distributive` | `-DistributiveModules` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-unreferenced` | `-UnreferenceProcedures` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-handlers` | `-HandlersExistence` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-emptyhandlers` | `-EmptyHandlers` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-extended` | `-ExtendedModulesCheck` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-reportfile` | `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-warnings-as-errors` | `-WarningsAsErrors` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nocheck` | `-noCheck` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nbegin` | `-NBegin=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nend` | `-NEnd=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-module-bogus` | `-Module=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-module` | `-Module=РасчётПоказателей` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-bogus` | `-ReportFormat=ZzzNetakogoZnacheniyaNet` | 0 | clean | 4.2 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-mxl` | `-ReportFormat=mxl` | 0 | clean | 4.2 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-txt` | `-ReportFormat=txt` | 0 | clean | 5.1 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-bogus` | `-ReportType=ZzzNetakogoZnacheniyaNet` | 0 | clean | 3.2 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-names` | `-ReportType=ByObjectNames` | 0 | clean | 3.3 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-ids` | `-ReportType=ByObjectIDs` | 0 | clean | 3.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-brief` | `-ReportType=Brief` | 0 | clean | 7.3 | 73 | 0 | запрошен, не создан |
+
+- строки `ВидОбъекта.ИмяОбъекта` (их считает `check_object_line_count`):
+  - нет таких строк
+
+### check-25-clean-checkconfig.json — лестница CHECKCMD_LADDER: команда `/CheckConfig`, 22 шага имён группы проверки, на чистой ИБ
+- `check_accepted` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-references", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl"...]
+- `check_defect_found` = ["check-config-extended", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl", "check-config-reportformat-txt", "check-config-reporttype-bogus", "check-config-reporttype-brief", "check-config-reporttype-ids", "check-config-reporttype-n...]
+- `check_mirror_differs_by_command_only` = true
+- `check_mirror_same_tail` = true
+- `check_no_defects` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `check_no_verdict` = []
+- `check_object_line_count` = {"check-config-base": 0, "check-config-configlog": 0, "check-config-distributive": 0, "check-config-emptyhandlers": 0, "check-config-extended": 2, "check-config-handlers": 0, "check-config-module": 2, "check-config-module-bogus": 2, "check-config-nbegin": 2, "check-config-nend": 2, "check-config-nocheck": 2, "check-config-references": 0, "check-config-reportfile": 2, "check-config-reportformat-...]
+- `check_object_names` = {"check-config-extended": ["Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-module": ["Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-module-bogus": ["Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-nbegin": ["Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-nend": ["Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCS...]
+- `check_predicted_steps` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `check_rejected` = []
+- `check_report_files` = []
+- `check_silent_variants` = []
+- `check_timed_out` = []
+- `check_trace_variants` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-references", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl"...]
+- `check_unpredicted_matches_list` = true
+- `check_unpredicted_steps` = ["check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl", "check-config-reportformat-txt", "check-config-reporttype-bogus", "check-config-reporttype-brief", "check-config-reporttype-ids", "check-config-reporttype-names", "check-config-warn...]
+- `check_verdicts` = {"check-config-base": "clean", "check-config-configlog": "clean", "check-config-distributive": "clean", "check-config-emptyhandlers": "clean", "check-config-extended": "defects", "check-config-handlers": "clean", "check-config-module": "defects", "check-config-module-bogus": "defects", "check-config-nbegin": "defects", "check-config-nend": "defects", "check-config-nocheck": "defects", "check-co...]
+- `predictions_broken` = ["check-config-extended"]
+- `predictions_held` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `predictions_unresolved` = []
+
+| вариант | токен шага | код | вердикт | сек | байт в /Out | строк объекта | файл `-ReportFile` |
+|---|---|---|---|---|---|---|---|
+| `check-config-base` | `канон CHECK_KEYS (5 флагов доступа)` | 0 | clean | 3.0 | 43 | 0 | — |
+| `check-config-configlog` | `-ConfigLogIntegrity` | 0 | clean | 3.0 | 43 | 0 | — |
+| `check-config-references` | `-IncorrectReferences` | 0 | clean | 3.1 | 43 | 0 | — |
+| `check-config-distributive` | `-DistributiveModules` | 0 | clean | 10.2 | 43 | 0 | — |
+| `check-config-unreferenced` | `-UnreferenceProcedures` | 0 | clean | 7.5 | 43 | 0 | — |
+| `check-config-handlers` | `-HandlersExistence` | 0 | clean | 11.0 | 43 | 0 | — |
+| `check-config-emptyhandlers` | `-EmptyHandlers` | 0 | clean | 14.2 | 43 | 0 | — |
+| `check-config-extended` | `-ExtendedModulesCheck` | 101 | defects | 4.1 | 340 | 2 | — |
+| `check-config-reportfile` | `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report` | 101 | defects | 3.0 | 340 | 2 | запрошен, не создан |
+| `check-config-warnings-as-errors` | `-WarningsAsErrors` | 101 | defects | 4.2 | 340 | 2 | запрошен, не создан |
+| `check-config-nocheck` | `-noCheck` | 101 | defects | 4.1 | 340 | 2 | запрошен, не создан |
+| `check-config-nbegin` | `-NBegin=ZzzNetakogoZnacheniyaNet` | 101 | defects | 4.1 | 340 | 2 | запрошен, не создан |
+| `check-config-nend` | `-NEnd=ZzzNetakogoZnacheniyaNet` | 101 | defects | 3.0 | 340 | 2 | запрошен, не создан |
+| `check-config-module-bogus` | `-Module=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-module` | `-Module=РасчётПоказателей` | 101 | defects | 3.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reportformat-bogus` | `-ReportFormat=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reportformat-mxl` | `-ReportFormat=mxl` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reportformat-txt` | `-ReportFormat=txt` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reporttype-bogus` | `-ReportType=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reporttype-names` | `-ReportType=ByObjectNames` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reporttype-ids` | `-ReportType=ByObjectIDs` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+| `check-config-reporttype-brief` | `-ReportType=Brief` | 101 | defects | 2.0 | 340 | 2 | запрошен, не создан |
+
+- строки `ВидОбъекта.ИмяОбъекта` (их считает `check_object_line_count`):
+  - `Документ.ФактРаботы`
+  - `Обработка.ВыгрузкаЗатратCSV`
+
+### check-25-broken-func.json — лестница CHECK_LADDER: команда `/CheckModules`, 22 шага имён группы проверки, на преднамеренно битой ИБ
+- `check_accepted` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_defect_found` = []
+- `check_mirror_differs_by_command_only` = true
+- `check_mirror_same_tail` = true
+- `check_no_defects` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_no_verdict` = []
+- `check_object_line_count` = {"check-modules-base": 0, "check-modules-configlog": 0, "check-modules-distributive": 0, "check-modules-emptyhandlers": 0, "check-modules-extended": 0, "check-modules-handlers": 0, "check-modules-module": 0, "check-modules-module-bogus": 0, "check-modules-nbegin": 0, "check-modules-nend": 0, "check-modules-nocheck": 0, "check-modules-references": 0, "check-modules-reportfile": 0, "check-modules...]
+- `check_object_names` = {}
+- `check_predicted_steps` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-references", "check-modules-unreferenced"]
+- `check_rejected` = []
+- `check_report_files` = []
+- `check_silent_variants` = []
+- `check_timed_out` = []
+- `check_trace_variants` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_unpredicted_matches_list` = true
+- `check_unpredicted_steps` = ["check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-reportformat-mxl", "check-modules-reportformat-txt", "check-modules-reporttype-bogus", "check-modules-reporttype-brief", "check-modules-reporttype-ids", "check-modules-reporttype-names", "chec...]
+- `check_verdicts` = {"check-modules-base": "clean", "check-modules-configlog": "clean", "check-modules-distributive": "clean", "check-modules-emptyhandlers": "clean", "check-modules-extended": "clean", "check-modules-handlers": "clean", "check-modules-module": "clean", "check-modules-module-bogus": "clean", "check-modules-nbegin": "clean", "check-modules-nend": "clean", "check-modules-nocheck": "clean", "check-mod...]
+- `predictions_broken` = []
+- `predictions_held` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-references", "check-modules-unreferenced"]
+- `predictions_unresolved` = []
+
+| вариант | токен шага | код | вердикт | сек | байт в /Out | строк объекта | файл `-ReportFile` |
+|---|---|---|---|---|---|---|---|
+| `check-modules-base` | `канон CHECK_KEYS (5 флагов доступа)` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-configlog` | `-ConfigLogIntegrity` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-references` | `-IncorrectReferences` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-distributive` | `-DistributiveModules` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-unreferenced` | `-UnreferenceProcedures` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-handlers` | `-HandlersExistence` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-emptyhandlers` | `-EmptyHandlers` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-extended` | `-ExtendedModulesCheck` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-reportfile` | `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-warnings-as-errors` | `-WarningsAsErrors` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nocheck` | `-noCheck` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nbegin` | `-NBegin=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nend` | `-NEnd=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-module-bogus` | `-Module=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-module` | `-Module=РасчётПоказателей` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-bogus` | `-ReportFormat=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-mxl` | `-ReportFormat=mxl` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-txt` | `-ReportFormat=txt` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-bogus` | `-ReportType=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-names` | `-ReportType=ByObjectNames` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-ids` | `-ReportType=ByObjectIDs` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-brief` | `-ReportType=Brief` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+
+- строки `ВидОбъекта.ИмяОбъекта` (их считает `check_object_line_count`):
+  - нет таких строк
+
+### check-25-broken-func-checkconfig.json — лестница CHECKCMD_LADDER: команда `/CheckConfig`, 22 шага имён группы проверки, на преднамеренно битой ИБ
+- `check_accepted` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-references", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl"...]
+- `check_defect_found` = ["check-config-extended", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl", "check-config-reportformat-txt", "check-config-reporttype-bogus", "check-config-reporttype-brief", "check-config-reporttype-ids", "check-config-reporttype-n...]
+- `check_mirror_differs_by_command_only` = true
+- `check_mirror_same_tail` = true
+- `check_no_defects` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `check_no_verdict` = []
+- `check_object_line_count` = {"check-config-base": 0, "check-config-configlog": 0, "check-config-distributive": 0, "check-config-emptyhandlers": 0, "check-config-extended": 3, "check-config-handlers": 0, "check-config-module": 3, "check-config-module-bogus": 3, "check-config-nbegin": 3, "check-config-nend": 3, "check-config-nocheck": 3, "check-config-references": 0, "check-config-reportfile": 3, "check-config-reportformat-...]
+- `check_object_names` = {"check-config-extended": ["Документ.ФактРаботы", "Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-module": ["Документ.ФактРаботы", "Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-module-bogus": ["Документ.ФактРаботы", "Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-nbegin": ["Документ.ФактРаботы", "Документ.ФактРаботы", "Обработка.В...]
+- `check_predicted_steps` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `check_rejected` = []
+- `check_report_files` = []
+- `check_silent_variants` = []
+- `check_timed_out` = []
+- `check_trace_variants` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-references", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl"...]
+- `check_unpredicted_matches_list` = true
+- `check_unpredicted_steps` = ["check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl", "check-config-reportformat-txt", "check-config-reporttype-bogus", "check-config-reporttype-brief", "check-config-reporttype-ids", "check-config-reporttype-names", "check-config-warn...]
+- `check_verdicts` = {"check-config-base": "clean", "check-config-configlog": "clean", "check-config-distributive": "clean", "check-config-emptyhandlers": "clean", "check-config-extended": "defects", "check-config-handlers": "clean", "check-config-module": "defects", "check-config-module-bogus": "defects", "check-config-nbegin": "defects", "check-config-nend": "defects", "check-config-nocheck": "defects", "check-co...]
+- `predictions_broken` = ["check-config-extended"]
+- `predictions_held` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `predictions_unresolved` = []
+
+| вариант | токен шага | код | вердикт | сек | байт в /Out | строк объекта | файл `-ReportFile` |
+|---|---|---|---|---|---|---|---|
+| `check-config-base` | `канон CHECK_KEYS (5 флагов доступа)` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-configlog` | `-ConfigLogIntegrity` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-references` | `-IncorrectReferences` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-distributive` | `-DistributiveModules` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-unreferenced` | `-UnreferenceProcedures` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-handlers` | `-HandlersExistence` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-emptyhandlers` | `-EmptyHandlers` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-extended` | `-ExtendedModulesCheck` | 101 | defects | 2.0 | 501 | 3 | — |
+| `check-config-reportfile` | `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-warnings-as-errors` | `-WarningsAsErrors` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-nocheck` | `-noCheck` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-nbegin` | `-NBegin=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-nend` | `-NEnd=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-module-bogus` | `-Module=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-module` | `-Module=РасчётПоказателей` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-reportformat-bogus` | `-ReportFormat=ZzzNetakogoZnacheniyaNet` | 101 | defects | 3.0 | 501 | 3 | запрошен, не создан |
+| `check-config-reportformat-mxl` | `-ReportFormat=mxl` | 101 | defects | 3.1 | 501 | 3 | запрошен, не создан |
+| `check-config-reportformat-txt` | `-ReportFormat=txt` | 101 | defects | 14.1 | 501 | 3 | запрошен, не создан |
+| `check-config-reporttype-bogus` | `-ReportType=ZzzNetakogoZnacheniyaNet` | 101 | defects | 3.0 | 501 | 3 | запрошен, не создан |
+| `check-config-reporttype-names` | `-ReportType=ByObjectNames` | 101 | defects | 3.0 | 501 | 3 | запрошен, не создан |
+| `check-config-reporttype-ids` | `-ReportType=ByObjectIDs` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+| `check-config-reporttype-brief` | `-ReportType=Brief` | 101 | defects | 2.0 | 501 | 3 | запрошен, не создан |
+
+- строки `ВидОбъекта.ИмяОбъекта` (их считает `check_object_line_count`):
+  - `Документ.ФактРаботы`
+  - `Обработка.ВыгрузкаЗатратCSV`
+
+### check-25-broken-form.json — лестница CHECK_LADDER: команда `/CheckModules`, 22 шага имён группы проверки, на преднамеренно битой ИБ
+- `check_accepted` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_defect_found` = []
+- `check_mirror_differs_by_command_only` = true
+- `check_mirror_same_tail` = true
+- `check_no_defects` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_no_verdict` = []
+- `check_object_line_count` = {"check-modules-base": 0, "check-modules-configlog": 0, "check-modules-distributive": 0, "check-modules-emptyhandlers": 0, "check-modules-extended": 0, "check-modules-handlers": 0, "check-modules-module": 0, "check-modules-module-bogus": 0, "check-modules-nbegin": 0, "check-modules-nend": 0, "check-modules-nocheck": 0, "check-modules-references": 0, "check-modules-reportfile": 0, "check-modules...]
+- `check_object_names` = {}
+- `check_predicted_steps` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-references", "check-modules-unreferenced"]
+- `check_rejected` = []
+- `check_report_files` = []
+- `check_silent_variants` = []
+- `check_timed_out` = []
+- `check_trace_variants` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-references", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-re...]
+- `check_unpredicted_matches_list` = true
+- `check_unpredicted_steps` = ["check-modules-module", "check-modules-module-bogus", "check-modules-nbegin", "check-modules-nend", "check-modules-nocheck", "check-modules-reportfile", "check-modules-reportformat-bogus", "check-modules-reportformat-mxl", "check-modules-reportformat-txt", "check-modules-reporttype-bogus", "check-modules-reporttype-brief", "check-modules-reporttype-ids", "check-modules-reporttype-names", "chec...]
+- `check_verdicts` = {"check-modules-base": "clean", "check-modules-configlog": "clean", "check-modules-distributive": "clean", "check-modules-emptyhandlers": "clean", "check-modules-extended": "clean", "check-modules-handlers": "clean", "check-modules-module": "clean", "check-modules-module-bogus": "clean", "check-modules-nbegin": "clean", "check-modules-nend": "clean", "check-modules-nocheck": "clean", "check-mod...]
+- `predictions_broken` = []
+- `predictions_held` = ["check-modules-base", "check-modules-configlog", "check-modules-distributive", "check-modules-emptyhandlers", "check-modules-extended", "check-modules-handlers", "check-modules-references", "check-modules-unreferenced"]
+- `predictions_unresolved` = []
+
+| вариант | токен шага | код | вердикт | сек | байт в /Out | строк объекта | файл `-ReportFile` |
+|---|---|---|---|---|---|---|---|
+| `check-modules-base` | `канон CHECK_KEYS (5 флагов доступа)` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-configlog` | `-ConfigLogIntegrity` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-references` | `-IncorrectReferences` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-distributive` | `-DistributiveModules` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-unreferenced` | `-UnreferenceProcedures` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-handlers` | `-HandlersExistence` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-emptyhandlers` | `-EmptyHandlers` | 0 | clean | 2.0 | 73 | 0 | — |
+| `check-modules-extended` | `-ExtendedModulesCheck` | 0 | clean | 3.0 | 73 | 0 | — |
+| `check-modules-reportfile` | `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-warnings-as-errors` | `-WarningsAsErrors` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nocheck` | `-noCheck` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nbegin` | `-NBegin=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-nend` | `-NEnd=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-module-bogus` | `-Module=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-module` | `-Module=РасчётПоказателей` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-bogus` | `-ReportFormat=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-mxl` | `-ReportFormat=mxl` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reportformat-txt` | `-ReportFormat=txt` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-bogus` | `-ReportType=ZzzNetakogoZnacheniyaNet` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-names` | `-ReportType=ByObjectNames` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-ids` | `-ReportType=ByObjectIDs` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+| `check-modules-reporttype-brief` | `-ReportType=Brief` | 0 | clean | 2.0 | 73 | 0 | запрошен, не создан |
+
+- строки `ВидОбъекта.ИмяОбъекта` (их считает `check_object_line_count`):
+  - нет таких строк
+
+### check-25-broken-form-checkconfig.json — лестница CHECKCMD_LADDER: команда `/CheckConfig`, 22 шага имён группы проверки, на преднамеренно битой ИБ
+- `check_accepted` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-references", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl"...]
+- `check_defect_found` = ["check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl", "check-config-reportformat-txt", "check-config-reporttype-bogus", "check-config-reporttype-brief", "c...]
+- `check_mirror_differs_by_command_only` = true
+- `check_mirror_same_tail` = true
+- `check_no_defects` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-references", "check-config-unreferenced"]
+- `check_no_verdict` = []
+- `check_object_line_count` = {"check-config-base": 0, "check-config-configlog": 0, "check-config-distributive": 0, "check-config-emptyhandlers": 1, "check-config-extended": 3, "check-config-handlers": 1, "check-config-module": 3, "check-config-module-bogus": 3, "check-config-nbegin": 3, "check-config-nend": 3, "check-config-nocheck": 3, "check-config-references": 0, "check-config-reportfile": 3, "check-config-reportformat-...]
+- `check_object_names` = {"check-config-emptyhandlers": ["Справочник.Сотрудники"], "check-config-extended": ["Справочник.Сотрудники", "Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-handlers": ["Справочник.Сотрудники"], "check-config-module": ["Справочник.Сотрудники", "Документ.ФактРаботы", "Обработка.ВыгрузкаЗатратCSV"], "check-config-module-bogus": ["Справочник.Сотрудники", "Документ.ФактРаботы",...]
+- `check_predicted_steps` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-references", "check-config-unreferenced"]
+- `check_rejected` = []
+- `check_report_files` = []
+- `check_silent_variants` = []
+- `check_timed_out` = []
+- `check_trace_variants` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-emptyhandlers", "check-config-extended", "check-config-handlers", "check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-references", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl"...]
+- `check_unpredicted_matches_list` = true
+- `check_unpredicted_steps` = ["check-config-module", "check-config-module-bogus", "check-config-nbegin", "check-config-nend", "check-config-nocheck", "check-config-reportfile", "check-config-reportformat-bogus", "check-config-reportformat-mxl", "check-config-reportformat-txt", "check-config-reporttype-bogus", "check-config-reporttype-brief", "check-config-reporttype-ids", "check-config-reporttype-names", "check-config-warn...]
+- `check_verdicts` = {"check-config-base": "clean", "check-config-configlog": "clean", "check-config-distributive": "clean", "check-config-emptyhandlers": "defects", "check-config-extended": "defects", "check-config-handlers": "defects", "check-config-module": "defects", "check-config-module-bogus": "defects", "check-config-nbegin": "defects", "check-config-nend": "defects", "check-config-nocheck": "defects", "chec...]
+- `predictions_broken` = ["check-config-emptyhandlers", "check-config-extended", "check-config-handlers"]
+- `predictions_held` = ["check-config-base", "check-config-configlog", "check-config-distributive", "check-config-references", "check-config-unreferenced"]
+- `predictions_unresolved` = []
+
+| вариант | токен шага | код | вердикт | сек | байт в /Out | строк объекта | файл `-ReportFile` |
+|---|---|---|---|---|---|---|---|
+| `check-config-base` | `канон CHECK_KEYS (5 флагов доступа)` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-configlog` | `-ConfigLogIntegrity` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-references` | `-IncorrectReferences` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-distributive` | `-DistributiveModules` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-unreferenced` | `-UnreferenceProcedures` | 0 | clean | 2.0 | 43 | 0 | — |
+| `check-config-handlers` | `-HandlersExistence` | 101 | defects | 2.0 | 195 | 1 | — |
+| `check-config-emptyhandlers` | `-EmptyHandlers` | 101 | defects | 2.0 | 195 | 1 | — |
+| `check-config-extended` | `-ExtendedModulesCheck` | 101 | defects | 2.0 | 532 | 3 | — |
+| `check-config-reportfile` | `-ReportFile=<tmp>\p1c_effektivnost\exec_check_report` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-warnings-as-errors` | `-WarningsAsErrors` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-nocheck` | `-noCheck` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-nbegin` | `-NBegin=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-nend` | `-NEnd=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-module-bogus` | `-Module=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-module` | `-Module=РасчётПоказателей` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reportformat-bogus` | `-ReportFormat=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reportformat-mxl` | `-ReportFormat=mxl` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reportformat-txt` | `-ReportFormat=txt` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reporttype-bogus` | `-ReportType=ZzzNetakogoZnacheniyaNet` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reporttype-names` | `-ReportType=ByObjectNames` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reporttype-ids` | `-ReportType=ByObjectIDs` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+| `check-config-reporttype-brief` | `-ReportType=Brief` | 101 | defects | 2.0 | 532 | 3 | запрошен, не создан |
+
+- строки `ВидОбъекта.ИмяОбъекта` (их считает `check_object_line_count`):
+  - `Документ.ФактРаботы`
+  - `Обработка.ВыгрузкаЗатратCSV`
+  - `Справочник.Сотрудники`
+
 ## Что с этим делать (сводный список плана оптимизации p1c)
 
 1. В `src/p1c/test/run.py` — не выбрасывать stdout процесса и собирать argv без битой склейки;
@@ -359,3 +891,11 @@
 6. Не пытаться исполнять BSL и запросы в ИБ из командной строки: зафиксировать в документации
    `p1c`, что `/RunScript`, `/EXECUTE`, `/TESTCLIENT`, `/TESTMANAGER`, `-testFile`, `-testOut`,
    `-TestOnly`, `/AllowExecuteScheduledJobs` и `ENTERPRISE` без окон измеренно недоступны.
+7. Различать в `p1c` «проверка нашла» и «проверка чиста» по коду и строкам `/Out`: `/CheckConfig` с
+   `-ExtendedModulesCheck` (или с `-HandlersExistence`) на битой ИБ даёт код 101 и построчный список
+   `ВидОбъекта.ИмяОбъекта …` с именем сломанного объекта, на чистой ИБ — код 0 и 43 байта
+   `Ошибок не обнаружено`; `/CheckModules` остаётся вердиктом только про синтаксис — 73 байта
+   `Синтаксических ошибок не обнаружено!` на всех 66 прогонах группы, включая обе битые ИБ.
+8. Не полагаться на отчёт проверки как на канал вывода: `-ReportFile` запросили 84 раза (14 шагов из
+   22 на каждой из шести лестниц) — файл не появился ни разу (`check_report_files = []`);
+   единственный наблюдаемый канал вердикта — `/Out`.

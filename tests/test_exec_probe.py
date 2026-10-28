@@ -36,9 +36,17 @@
    в `MUTATING_VARIANTS`: они не входят в `--all` и без `--allow-mutating` не запускаются (код 2).
 8. Предсказания записаны в `PREDICTIONS` до прогона и имеют проверяемый источник — файл корпуса с
    цитируемой строкой или отчёт контура с названным ключом.
+ 9. Лестницы группы проверки (`CHECK_LADDER` на `/CheckModules`, `CHECKCMD_LADDER` на
+    `/CheckConfig`) — полные зеркала: 22 шага с тем же хвостом модификаторов, различие ровно в
+    имени команды. Предсказание есть у 16 шагов (источник — канон корпуса БСП или прогон контура),
+    остальные 28 записаны как наблюдение без предсказания (`CHECK_OBSERVATION_ONLY`): ни один
+    корпус эти имена в командной строке не употребляет. Исход «нашёл ли прогон дефект» меряется
+    строками отчёта (`object_lines`), а не кодом возврата.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -467,6 +475,7 @@ class TestModifierLadders(unittest.TestCase):
         """Ни необъяснённого шага с двумя токенами, ни устаревшей записи исключения."""
         all_ladders = (exec_probe.SWEEP, exec_probe.PROGRAM_LADDER, exec_probe.CONTROLS,
                        exec_probe.NEGATIVE_LADDER, exec_probe.AUTH_LADDER, exec_probe.TEST_LADDER,
+                       exec_probe.CHECK_LADDER, exec_probe.CHECKCMD_LADDER,
                        *(ladder for _name, ladder in self.LADDERS))
         used = set()
         for ladder in all_ladders:
@@ -588,6 +597,568 @@ class TestModifierValuesAreMeasured(unittest.TestCase):
         flags = argv("load-listfile-ok")
         self.assertNotIn(exec_probe.LIST_ARG, flags)
         self.assertIn("work/exec_loadlist.txt", flags)
+
+
+class TestCheckLadder(unittest.TestCase):
+    """Лестницы группы проверки (`--checkkeys`, `--checkconfig`) и их предсказания.
+
+    Лестницы — полные зеркала: 22 одинаковых шага при двух именах команды. Поэтому каждое
+    наблюдение отвечает на вопрос «принято ли имя», а не «принято ли имя именно этой командой»:
+    зеркало обязано различаться только именем команды.
+    """
+
+    LADDERS = (("CHECK_LADDER", exec_probe.CHECK_LADDER, "/CheckModules"),
+               ("CHECKCMD_LADDER", exec_probe.CHECKCMD_LADDER, "/CheckConfig"))
+
+    def test_each_check_ladder_is_named_by_its_own_option(self):
+        """Без имени в тексте опция не описана: `--checkkeys` и `--checkconfig` обязаны называть
+        свою лестницу."""
+        text = (ROOT / "scripts" / "exec_probe.py").read_text(encoding="utf-8-sig")
+        self.assertIn("CHECK_LADDER", text)
+        self.assertIn("CHECKCMD_LADDER", text)
+        self.assertIn("--checkkeys", text)
+        self.assertIn("--checkconfig", text)
+
+    def test_ladders_are_mirrors_differing_only_by_command_name(self):
+        for name, ladder, command in self.LADDERS:
+            self.assertEqual(len(ladder), 22, name)
+            for variant, _program, _encoding in ladder:
+                mirrored = exec_probe.check_mirror_variant(variant)
+                self.assertEqual(exec_probe.check_mirror_variant(mirrored), variant,
+                                 f"{variant}: зеркало не двунаправленно")
+                own, mirror = exec_probe.variant_signature(variant), \
+                    exec_probe.variant_signature(mirrored)
+                self.assertEqual(own["mode"], mirror["mode"], variant)
+                self.assertEqual(own["tail"], mirror["tail"], variant)
+                self.assertEqual(own["args"], mirror["args"], variant)
+                self.assertEqual(own["names"], (command,), variant)
+                self.assertEqual(exec_probe.signature_diff(own, mirror), ["names"], variant)
+                tokens = exec_probe.signature_tokens(own, mirror)
+                self.assertEqual(len(tokens), 1, variant)
+                self.assertEqual(tokens[0]["part"], "names", variant)
+                self.assertEqual(tokens[0]["position"], 0, variant)
+                self.assertEqual(tokens[0]["from"], command, variant)
+        for variant in ("load-ok", "runscript", "auth-bogus-user"):
+            with self.assertRaises(KeyError):
+                exec_probe.check_mirror_variant(variant)
+
+    def test_bases_carry_the_measured_check_canon(self):
+        """Пара базовых шагов и есть сравнение «одна переменная — имя команды»: хвост одинаков и
+        равен канону `check` из `scripts/ib_loop.py`, имя отчётного файла в нём ещё не стоит."""
+        base_a, base_b = "check-modules-base", "check-config-base"
+        signature_a, signature_b = (exec_probe.variant_signature(base_a),
+                                    exec_probe.variant_signature(base_b))
+        self.assertEqual(signature_a["tail"], signature_b["tail"])
+        self.assertEqual(signature_a["tail"], tuple(exec_probe.ib_loop.CHECK_KEYS))
+        self.assertEqual(exec_probe.signature_diff(signature_a, signature_b), ["names"])
+        self.assertEqual(exec_probe.CHECK_TAIL_BASE, tuple(exec_probe.ib_loop.CHECK_KEYS))
+        for variant in exec_probe.check_observation_variants():
+            tail = exec_probe.variant_signature(variant)["tail"]
+            self.assertEqual(tail[:len(exec_probe.CHECK_TAIL_BASE)], exec_probe.CHECK_TAIL_BASE,
+                             f"{variant}: канон `check` изменён")
+
+    def test_every_ladder_step_changes_exactly_one_command_token(self):
+        for name, ladder, _command in self.LADDERS:
+            diffs = exec_probe.ladder_step_diffs(ladder)
+            self.assertEqual(diffs[0]["from"], "", name)
+            self.assertEqual(diffs[0]["command_tokens"], [], name)
+            for diff in diffs[1:]:
+                self.assertEqual(diff["changed_triple"], ["variant"],
+                                 f"{name}/{diff['to']}: шаг меняет больше одной позиции тройки")
+                self.assertEqual(diff["changed_command"], ["tail"],
+                                 f"{name}/{diff['to']}: изменена не только цепь модификаторов")
+                self.assertEqual(len(diff["command_tokens"]), 1,
+                                 f"{name}/{diff['to']}: шаг меняет больше одного токена команды")
+                self.assertEqual(diff["single_command_token"], True, f"{name}/{diff['to']}")
+                self.assertNotIn((diff["from"], diff["to"]), exec_probe.TOKEN_MULTI_REASON,
+                                 f"{name}/{diff['to']}: двухтокенный шаг занесён в исключения")
+
+    def test_corpora_flags_follow_the_corpora_order(self):
+        """Семь корпусных флагов идут в том же порядке, что их собирает канон корпуса — иначе
+        нарастающий хвост нельзя сверить с канонической командой."""
+        canon = tuple(exec_probe.ib_loop.CHECK_KEYS)
+        tail = exec_probe.variant_signature("check-modules-extended")["tail"]
+        self.assertEqual(tail[len(canon):], exec_probe.CHECK_CORPORA_FLAGS)
+        for position, flag in enumerate(exec_probe.CHECK_CORPORA_FLAGS, start=1):
+            variant = exec_probe.CHECK_LADDER[position][0]
+            own = exec_probe.variant_signature(variant)["tail"]
+            self.assertEqual(own[-1], flag, variant)
+            self.assertEqual(own[:len(canon)], canon, variant)
+        for name, ladder, _command in self.LADDERS:
+            for position in range(1, 8):
+                mirrored = exec_probe.variant_signature(ladder[position][0])["tail"]
+                other = exec_probe.variant_signature(
+                    exec_probe.check_mirror_variant(ladder[position][0]))["tail"]
+                self.assertEqual(mirrored, other, f"{name}/{ladder[position][0]}")
+
+    def test_report_flag_is_inherited_and_later_steps_add_one_name(self):
+        """Файл отчёта — общий фундамент наблюдения: после него каждый шаг добавляет ровно одно имя
+        поверх того же хвоста. Нарастающей цепью шли бы флаги прежних наблюдений, и «имя принято»
+        нельзя было бы отделить от «имя принято вместе с соседом»."""
+        canon = tuple(exec_probe.ib_loop.CHECK_KEYS)
+        report_tail = exec_probe.variant_signature("check-modules-reportfile")["tail"]
+        self.assertEqual(report_tail[-1], f"-ReportFile={exec_probe.REPORT_ARG}")
+        self.assertEqual(report_tail, canon + exec_probe.CHECK_CORPORA_FLAGS + (report_tail[-1],))
+        for name, ladder, _command in self.LADDERS:
+            for step in range(9, 22):
+                variant = ladder[step][0]
+                tail = exec_probe.variant_signature(variant)["tail"]
+                self.assertEqual(len(tail), len(report_tail) + 1, variant)
+                self.assertEqual(tail[:-1], report_tail, variant)
+                added = tail[-1]
+                self.assertNotEqual(added, report_tail[-1], variant)
+                self.assertIn(added.split("=")[0], exec_probe.CHECK_UNCITED_NAMES, variant)
+
+    def test_report_values_come_from_the_measured_adjacency(self):
+        """Значения `-ReportFormat` и `-ReportType` взяты из окна соседства в бинарных корпусах
+        платформы: имена отчётных опций стоят в одном окне с этими словами."""
+        for tail in (exec_probe.CHECK_TAIL_FORMAT_BOGUS, exec_probe.CHECK_TAIL_FORMAT_MXL,
+                     exec_probe.CHECK_TAIL_FORMAT_TXT):
+            flag, value = tail[-1].split("=", 1)
+            self.assertEqual(flag, "-ReportFormat")
+            self.assertIn(value, exec_probe.REPORT_FORMAT_VALUES + (exec_probe.BOGUS_VALUE,))
+        for tail in (exec_probe.CHECK_TAIL_TYPE_BOGUS, exec_probe.CHECK_TAIL_TYPE_BRIEF,
+                     exec_probe.CHECK_TAIL_TYPE_NAMES, exec_probe.CHECK_TAIL_TYPE_IDS):
+            flag, value = tail[-1].split("=", 1)
+            self.assertEqual(flag, "-ReportType")
+            self.assertIn(value, exec_probe.REPORT_TYPE_VALUES + (exec_probe.BOGUS_VALUE,))
+        self.assertEqual({tail[-1].split("=", 1)[1]
+                          for tail in (exec_probe.CHECK_TAIL_FORMAT_MXL,
+                                       exec_probe.CHECK_TAIL_FORMAT_TXT)},
+                         set(exec_probe.REPORT_FORMAT_VALUES),
+                         "лестница обязана прогнать каждое измеренное значение формата")
+        self.assertEqual({tail[-1].split("=", 1)[1] for tail in
+                          (exec_probe.CHECK_TAIL_TYPE_BRIEF, exec_probe.CHECK_TAIL_TYPE_NAMES,
+                           exec_probe.CHECK_TAIL_TYPE_IDS)},
+                         set(exec_probe.REPORT_TYPE_VALUES),
+                         "лестница обязана прогнать каждое измеренное значение типа отчёта")
+        artifact = ROOT / "reports" / "flags-24-checkgroups.json"
+        if not artifact.exists():
+            self.skipTest("замер соседства `reports/flags-24-checkgroups.json` не выгружен")
+        document = json.loads(artifact.read_text(encoding="utf-8"))
+        names = {"ReportFile", "ReportFormat", "ReportType"}
+        measured = set()
+        for record in document["results"]:
+            if record["needle"] not in names:
+                continue
+            neighbours = [item for window in record["windows"] for item in window["neighbours"]]
+            measured.update(item for item in neighbours
+                            if item in exec_probe.REPORT_FORMAT_VALUES
+                            or item in exec_probe.REPORT_TYPE_VALUES)
+            self.assertNotIn(exec_probe.BOGUS_VALUE, neighbours,
+                             "вымышленного значения в окне соседства нет — оно не измерено")
+        self.assertTrue(measured)
+        self.assertTrue(measured <= set(exec_probe.REPORT_FORMAT_VALUES)
+                        | set(exec_probe.REPORT_TYPE_VALUES))
+
+    def test_report_argument_is_replaced_by_the_probe_directory(self):
+        """Метка `reportfile` обязана быть подменена: прогон с меткой ничего не пишет, и файл
+        отчёта не читается. Каталогами прогона остаются `--work`, имя файла не меняется."""
+        for variant in ("check-modules-reportfile", "check-config-reportfile",
+                        "check-modules-warnings-as-errors", "check-config-reporttype-names",
+                        "check-modules-module"):
+            tokens = argv(variant)
+            self.assertNotIn(exec_probe.REPORT_ARG, tokens, variant)
+            values = [item for item in tokens if item.startswith("-ReportFile=")]
+            self.assertEqual(len(values), 1, variant)
+            self.assertTrue(values[0].endswith(exec_probe.CHECK_REPORT_NAME), variant)
+            self.assertEqual(values[0],
+                             "-ReportFile=" + str(pathlib.Path("work") / exec_probe.CHECK_REPORT_NAME),
+                             variant)
+            self.assertEqual(exec_probe.report_arg_from_argv(tokens),
+                             pathlib.Path("work") / exec_probe.CHECK_REPORT_NAME, variant)
+        self.assertEqual(exec_probe.report_arg_from_argv(["1cv8.exe", "-ReportFile=work/x"]),
+                         pathlib.Path("work/x"))
+        self.assertEqual(exec_probe.report_arg_from_argv(["1cv8.exe", "-ReportFile", "work/x"]),
+                         pathlib.Path("work/x"))
+        self.assertIsNone(exec_probe.report_arg_from_argv(["1cv8.exe", "-ReportFormat=mxl"]))
+        self.assertEqual(exec_probe.report_file_for(pathlib.Path("work")).as_posix(),
+                         "work/" + exec_probe.CHECK_REPORT_NAME)
+
+    def test_values_are_measured_or_bogus(self):
+        """Значение подставлено только там, где имя измерено вместе со значением (файл отчёта,
+        формат, тип, имя модуля) или где проверяется сама проверка значения (`BOGUS_VALUE`).
+        Голые имена без значения — отдельное наблюдение: принято имя или нет."""
+        allowed = {"-ReportFile": (exec_probe.REPORT_ARG,),
+                   "-ReportFormat": exec_probe.REPORT_FORMAT_VALUES + (exec_probe.BOGUS_VALUE,),
+                   "-ReportType": exec_probe.REPORT_TYPE_VALUES + (exec_probe.BOGUS_VALUE,),
+                   "-Module": (exec_probe.CHECK_MODULE_NAME, exec_probe.BOGUS_VALUE),
+                   "-NBegin": (exec_probe.BOGUS_VALUE,),
+                   "-NEnd": (exec_probe.BOGUS_VALUE,)}
+        for variant in exec_probe.check_observation_variants():
+            for token in exec_probe.variant_signature(variant)["tail"]:
+                name, separator, value = token.partition("=")
+                if not separator:
+                    self.assertNotIn(name, allowed, f"{variant}: {name} измерено со значением")
+                    continue
+                self.assertIn(name, allowed, f"{variant}: {name} значения не имеет")
+                self.assertIn(value, allowed[name], f"{variant}: значение {value} не измерено")
+        self.assertNotIn(exec_probe.CHECK_MODULE_NAME, exec_probe.CHECK_CORPORA_FLAGS)
+        self.assertTrue(exec_probe.CHECK_MODULE_NAME.isalpha())
+
+    def test_check_variants_are_read_only(self):
+        """Ни один вариант группы проверки не меняет конфигурацию: лестницы прогоняются без
+        `--allow-mutating` (проверка читает конфигурацию) и покрывают все 44 шага."""
+        variants = exec_probe.check_observation_variants()
+        self.assertEqual(len(variants), 44)
+        self.assertEqual(len(set(variants)), 44)
+        self.assertEqual([item for item in variants if item in exec_probe.MUTATING_VARIANTS], [],
+                         "группа проверки не обязана входить в список опасных вариантов")
+        self.assertTrue(set(variants) <= set(exec_probe.all_observation_variants()),
+                        "группа проверки обязана входить в `--all`")
+        self.assertEqual(set(variants),
+                         {variant for variant, _p, _e in exec_probe.CHECK_LADDER}
+                         | {variant for variant, _p, _e in exec_probe.CHECKCMD_LADDER},
+                         "у варианта группы проверки нет шага ни в одной лестнице")
+
+    def test_check_commands_and_mode_are_single_and_measured(self):
+        """Один вариант — одна команда проверки, режим один (DESIGNER), аргументов-меток у варианта
+        группы проверки нет: единственный подставляемый аргумент — путь отчёта в хвосте."""
+        for variant in exec_probe.check_observation_variants():
+            signature = exec_probe.variant_signature(variant)
+            self.assertEqual(signature["mode"], "DESIGNER", variant)
+            self.assertEqual(len(signature["names"]), 1, variant)
+            self.assertIn(signature["names"][0], exec_probe.CHECK_COMMAND_NAMES, variant)
+            self.assertEqual(signature["args"], (), variant)
+            names = [item.split("=")[0] for item in signature["tail"]][len(exec_probe.CHECK_TAIL_BASE):]
+            for name in names:
+                self.assertIn(name, exec_probe.CHECK_OPTION_NAMES, f"{variant}: {name} не из группы")
+
+    def test_predicted_and_unpredicted_steps_are_split(self):
+        """Предсказание есть только там, где имя названо источником; остальные 28 шагов — наблюдение
+        без предсказания, и их список сверяется механически, а не «на глаз»."""
+        variants = set(exec_probe.check_observation_variants())
+        predicted = set(exec_probe.CHECK_PREDICTED_STEPS)
+        observation_only = set(exec_probe.CHECK_OBSERVATION_ONLY)
+        self.assertEqual(len(predicted), 16)
+        self.assertEqual(len(observation_only), 28)
+        self.assertEqual(predicted | observation_only, variants)
+        self.assertEqual(predicted & observation_only, set())
+        self.assertTrue(predicted <= variants and observation_only <= variants)
+        predicted_records = {variant for variant in exec_probe.PREDICTIONS
+                             if variant.startswith("check-")}
+        self.assertEqual(predicted_records, predicted)
+        for variant in observation_only:
+            self.assertNotIn(variant, exec_probe.PREDICTIONS,
+                             f"{variant}: непредсказанный шаг имеет предсказание")
+        for name, ladder, _command in self.LADDERS:
+            steps = [variant for variant, _p, _e in ladder]
+            self.assertEqual(sorted(item for item in steps if item in predicted),
+                             exec_probe.check_predicted_steps(ladder), name)
+            self.assertEqual(sorted(item for item in steps if item in observation_only),
+                             exec_probe.check_unpredicted_steps(ladder), name)
+            self.assertEqual(len(steps), 22, name)
+        added = [exec_probe.variant_signature(variant)["tail"][-1].split("=")[0]
+                 for variant in observation_only]
+        self.assertEqual(set(added), set(exec_probe.CHECK_UNCITED_NAMES),
+                         "список имён без источника обязан соответствовать непредсказанным шагам")
+
+    def test_check_predictions_have_a_readable_source(self):
+        """Каждое предсказание группы проверки имеет источник: базовый шаг `--checkkeys` — прогон
+        контура (гейт), остальные 15 — канон корпуса, собирающий команду проверки. У `/CheckConfig`
+        цитата обязана называть само имя команды."""
+        records = {variant: record for variant, record in exec_probe.PREDICTIONS.items()
+                   if variant.startswith("check-")}
+        self.assertEqual(len(records), 16)
+        kontur = [variant for variant, record in records.items() if record["kind"] == "kontur"]
+        self.assertEqual(kontur, ["check-modules-base"])
+        record = records["check-modules-base"]
+        self.assertEqual(record["source"], "reports/gate-14.json")
+        self.assertEqual(record["source_key"], "check_code")
+        self.assertEqual(record["predicts"], "code0")
+        for variant, record in records.items():
+            if record["kind"] == "kontur":
+                continue
+            self.assertEqual(exec_probe.prediction_source(record),
+                             exec_probe.CHECK_PREDICTION_SOURCE, variant)
+            self.assertTrue(record["needle"], variant)
+            self.assertIn("стр.", record["quote"], variant)
+        corpora_key, corpora_relative = exec_probe.CHECK_PREDICTION_SOURCE
+        self.assertTrue(corpora_key.startswith("corpora_"))
+        self.assertTrue(corpora_relative.endswith(".bsl"))
+        self.assertFalse(corpora_relative.startswith(("/", "\\")))
+        self.assertNotIn("/", corpora_key)
+        self.assertEqual(records["check-config-base"]["needle"], "/CheckConfig")
+
+    def test_prediction_source_falls_back_to_the_default_source(self):
+        """Запасной вариант источника общий: у предсказаний модификаторов его не переопределяют."""
+        self.assertEqual(exec_probe.prediction_source({"needle": "x"}),
+                         exec_probe.PREDICTION_SOURCE)
+        self.assertEqual(
+            exec_probe.prediction_source({"corpora_source": exec_probe.CHECK_PREDICTION_SOURCE}),
+            exec_probe.CHECK_PREDICTION_SOURCE)
+
+    def test_object_lines_follow_the_corpora_rule(self):
+        """Разбор строк отчёта повторяет канон корпуса: служебные строки пропускаются, `{`
+        снимается, строка без точки в первом токене — не объект. Дубли не схлопываются."""
+        lines = ["Соединение с хранилищем конфигурации не установлено",
+                 "Подключаемый_Модуль: ошибка",
+                 "{Справочник.РасчётПоказателей",
+                 "Отчёт.Продажи.Продажи",
+                 "Синтаксических ошибок не обнаружено!",
+                 "Справочник.РасчётПоказателей",
+                 ""]
+        self.assertEqual(exec_probe.object_lines(lines),
+                         ["Справочник.РасчётПоказателей", "Отчёт.Продажи",
+                          "Справочник.РасчётПоказателей"])
+        self.assertEqual(exec_probe.object_lines([]), [])
+
+    def test_bogus_value_of_an_option_is_probed_before_the_measured_value(self):
+        """Вымышленное значение стоит раньше настоящего той же опции (и первым в своей группе):
+        если имя принято с заведомо неверным значением, шаг с настоящим значением уже не различает
+        «имя принято» и «значение проверено». Вымышленное значение предсказания не имеет."""
+        groups = {"-ReportFormat": ("reportformat-bogus", "reportformat-mxl", "reportformat-txt"),
+                  "-ReportType": ("reporttype-bogus", "reporttype-names", "reporttype-ids",
+                                  "reporttype-brief"),
+                  "-Module": ("module-bogus", "module")}
+        for name, ladder, _command in self.LADDERS:
+            steps = [variant[len("check-modules-"):] if name == "CHECK_LADDER"
+                     else variant[len("check-config-"):]
+                     for variant, _p, _e in ladder]
+            for option, order in groups.items():
+                positions = [steps.index(item) for item in order]
+                self.assertEqual(positions[0], min(positions), f"{name}: {option}")
+                self.assertEqual(len(set(positions)), len(order), f"{name}: {option}")
+                bogus = order[0]
+                self.assertIn(bogus, exec_probe.CHECK_UNCITED_STEPS, f"{name}/{bogus}")
+                self.assertIn(exec_probe.BOGUS_VALUE,
+                              exec_probe.variant_signature(f"check-modules-{bogus}")["tail"][-1],
+                              f"{name}/{bogus}")
+                for token in exec_probe.variant_signature(f"check-modules-{bogus}")["tail"]:
+                    if token.split("=")[0] == option:
+                        self.assertIn(exec_probe.BOGUS_VALUE, token, f"{name}/{bogus}")
+
+    def test_check_observation_reads_all_three_places(self):
+        """Отчёт группы проверки смотрят в трёх местах: `/Out`, stdout/stderr процесса и файл,
+        названный `-ReportFile`. `object_names` ограничен сверху, полный счётчик строк — отдельно."""
+        out_lines = [f"Справочник.ОбъектИзВывода{index}" for index in range(3)]
+        console_lines = ["{Справочник.ОбъектИзКонсоли", "Синтаксических ошибок не обнаружено!"]
+        report_lines = ["Отчёт.ОбъектИзФайла",
+                        "Соединение с хранилищем конфигурации не установлено"]
+        result = {"variant": "check-modules-reportfile", "code": 0, "timed_out": False,
+                  "bytes": 1234, "lines": out_lines, "console_lines": console_lines,
+                  "report": {"report_exists": True, "report_bytes": 4321,
+                             "report_line_count": len(report_lines),
+                             "report_lines": report_lines, "report_siblings": []}}
+        observation = exec_probe.check_observation(result)
+        self.assertEqual(observation["code"], 0)
+        self.assertTrue(observation["accepted"])
+        self.assertEqual(observation["verdict"], "defects",
+                         "строки объекта есть: это вердикт «дефекты найдены», а не отказ имени")
+        self.assertEqual(observation["out_lines"], 3)
+        self.assertEqual(observation["console_line_count"], 2)
+        self.assertEqual(observation["report_bytes"], 4321)
+        self.assertEqual(observation["object_line_count"], 5)
+        self.assertEqual(observation["object_names"],
+                         out_lines + ["Справочник.ОбъектИзКонсоли", "Отчёт.ОбъектИзФайла"])
+        many = [f"Справочник.Объект{index}" for index in range(exec_probe.REPORT_LINE_LIMIT + 20)]
+        wide = exec_probe.check_observation({**result, "lines": many, "console_lines": []})
+        self.assertEqual(wide["object_line_count"], len(many) + 1)
+        self.assertEqual(len(wide["object_names"]), exec_probe.REPORT_LINE_LIMIT,
+                         "список имён ограничен, счётчик строк — нет")
+        hung = exec_probe.check_observation({**result, "code": 1, "timed_out": True,
+                                             "lines": [], "console_lines": [],
+                                             "report": {**result["report"], "report_lines": [],
+                                                        "report_exists": False,
+                                                        "report_line_count": 0}})
+        self.assertFalse(hung["accepted"])
+        self.assertTrue(hung["timed_out"])
+        self.assertEqual(hung["verdict"], "refused")
+        empty = exec_probe.check_observation({"variant": "check-config-base", "code": 0,
+                                              "timed_out": False, "bytes": 0, "lines": [],
+                                              "console_lines": [],
+                                              "report": {"report_exists": False, "report_bytes": 0,
+                                                        "report_line_count": 0, "report_lines": [],
+                                                        "report_siblings": []}})
+        self.assertEqual(empty["object_line_count"], 0)
+        self.assertEqual(empty["object_names"], [])
+        self.assertFalse(empty["report_exists"])
+        self.assertEqual(empty["report_bytes"], 0)
+
+    def test_verdict_separates_the_check_verdict_from_a_refused_name(self):
+        """Наблюдение 44 прогонов на чистой ИБ: код 101 стоит рядом со строками дефектов, код 0 —
+        рядом со строкой `Ошибок не обнаружено`, а заведомо отсутствующее имя (`bogus-slash`) даёт
+        код 1 без строк объекта. Значит `code == 0` не может быть признаком «имя принято»: иначе
+        15 шагов `/CheckConfig` с найденными дефектами оказались бы названы отказом имени."""
+        defect_line = 'Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"'
+        self.assertEqual(exec_probe.check_verdict(101, 15), "defects")
+        self.assertEqual(exec_probe.check_verdict(0, 0), "clean")
+        self.assertEqual(exec_probe.check_verdict(101, 0), "no_verdict")
+        self.assertEqual(exec_probe.check_verdict(1, 0), "refused")
+        for code, lines, verdict in ((exec_probe.CHECK_CLEAN_CODE, ["Ошибок не обнаружено"],
+                                      "clean"),
+                                     (exec_probe.CHECK_DEFECT_CODE, [defect_line], "defects")):
+            observation = exec_probe.check_observation({"variant": "check-config-extended",
+                                                        "code": code, "timed_out": False,
+                                                        "bytes": 340, "lines": lines,
+                                                        "console_lines": [],
+                                                        "report": {"report_exists": False,
+                                                                   "report_bytes": 0,
+                                                                   "report_line_count": 0,
+                                                                   "report_lines": [],
+                                                                   "report_siblings": []}})
+            self.assertEqual(observation["verdict"], verdict)
+            self.assertTrue(observation["accepted"], f"код {code}: команда вынесла вердикт")
+        refused = exec_probe.check_observation({"variant": "check-config-module", "code": 1,
+                                                "timed_out": False, "bytes": 70,
+                                                "lines": ["Пользователь ИБ не идентифицирован"],
+                                                "console_lines": [],
+                                                "report": {"report_exists": False,
+                                                           "report_bytes": 0,
+                                                           "report_line_count": 0,
+                                                           "report_lines": [],
+                                                           "report_siblings": []}})
+        self.assertFalse(refused["accepted"])
+        self.assertEqual(refused["verdict"], "refused")
+        self.assertEqual(refused["object_line_count"], 0,
+                         "служебная строка не должна читаться как дефект объекта")
+
+    def synthetic_result(self, variant: str) -> dict:
+        """Синтетический результат прогона той же формы, что возвращает `run`: тест лестницы не
+        должен запускать платформу, но обязан пройти весь путь `main` до ключей наблюдения."""
+        return {"variant": variant, "argv": ["1cv8.exe"], "code": 0, "timed_out": False,
+                "seconds": 2.0, "bytes": 33, "lines": ["Синтаксических ошибок не обнаружено!"],
+                "stdout_bytes": 40, "stderr_bytes": 0,
+                "console_lines": ["Синтаксических ошибок не обнаружено!"],
+                "marker_exists": False, "marker_text": "", "script_encoding": "cp1251",
+                "script_encoding_bytes": 0, "script_written": False, "script_bytes": 0,
+                "script_path": "work/exec_program.txt", "program_kind": "marker",
+                "report": {"report_asked": True,
+                           "report_path": str(exec_probe.report_file_for(pathlib.Path("work"))),
+                           "report_exists": True, "report_bytes": 73, "report_lines": [],
+                           "report_line_count": 0, "report_siblings": []}}
+
+    def check_local_without_cfg(self, raw: pathlib.Path) -> str:
+        """Копия `local.paths.json` без ключа `cfg`: корпусные ключи остаются, чтобы источник
+        предсказания читался. Нет реального файла путей — тест нечего копировать (skip)."""
+        source = ROOT / "local.paths.json"
+        if not source.is_file():
+            self.skipTest("нет local.paths.json: без путей источника предсказания нет")
+        data = json.loads(source.read_text(encoding="utf-8-sig"))
+        for key in ("cfg", "ib", "bin", "work"):
+            data.pop(key, None)
+        path = raw / "local-nocfg.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return str(path)
+
+    @staticmethod
+    def silent_main(argv: list) -> int:
+        """`main` печатает по строке наблюдения на каждый из 22 шагов лестницы: в тесте этот вывод
+        только шумит, проверяют код возврата и вызовы `run`, оставшиеся за ним."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            return exec_probe.main(argv)
+
+    def test_check_ladders_need_neither_cfg_nor_allow_mutating(self):
+        """Группа проверки читает конфигурацию, но не меняет её и не строит команду загрузки:
+        `main` прогоняет обе лестницы без `--cfg` и без `--allow-mutating` (код 0 при читаемом
+        источнике предсказания). Пути берутся из копии `local.paths.json` без `cfg`, иначе
+        локальный `cfg` подставился бы сам собой и проверка была бы пустой."""
+        calls = []
+
+        def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
+                 program_kind="marker", write_script=True, cfg="", loadlist=""):
+            calls.append((variant, cfg, loadlist, write_script, program_kind))
+            return self.synthetic_result(variant)
+
+        original = exec_probe.run
+        exec_probe.run = stub
+        try:
+            with tempfile.TemporaryDirectory() as raw:
+                local = self.check_local_without_cfg(pathlib.Path(raw))
+                for option, ladder in (("--checkkeys", exec_probe.CHECK_LADDER),
+                                       ("--checkconfig", exec_probe.CHECKCMD_LADDER)):
+                    calls.clear()
+                    code = self.silent_main(["--local", local,
+                                             "--work", str(pathlib.Path(raw) / "work"),
+                                             "--bin", BIN, "--ib", IB, option])
+                    expected = [variant for variant, _p, _e in ladder]
+                    self.assertEqual(code, 0, option)
+                    self.assertEqual([item[0] for item in calls], expected, option)
+                    self.assertEqual({item[1] for item in calls}, {""}, f"{option}: --cfg не нужен")
+                    self.assertEqual({item[2] for item in calls}, {""},
+                                     f"{option}: -listFile не нужен")
+                    self.assertEqual(len(calls), 22, option)
+        finally:
+            exec_probe.run = original
+
+    def test_check_ladder_fails_when_the_prediction_source_is_unreadable(self):
+        """Источник предсказания обязана читаться: без `local.paths.json` корпусный источник
+        недоступен, и лестница возвращает 1, хотя платформа (здесь — подмена) отработала 22 шага."""
+        missing = ROOT / "tests" / "_no-such-local-paths.json"
+        calls = []
+
+        def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
+                 program_kind="marker", write_script=True, cfg="", loadlist=""):
+            calls.append(variant)
+            return self.synthetic_result(variant)
+
+        original = exec_probe.run
+        exec_probe.run = stub
+        try:
+            for option in ("--checkkeys", "--checkconfig"):
+                calls.clear()
+                with tempfile.TemporaryDirectory() as raw:
+                    code = self.silent_main(["--local", str(missing),
+                                             "--work", str(pathlib.Path(raw) / "work"),
+                                             "--bin", BIN, "--ib", IB, option])
+                self.assertEqual(code, 1, option)
+                self.assertEqual(len(calls), 22, option)
+        finally:
+            exec_probe.run = original
+
+    def test_check_report_keys_separate_defect_verdicts_from_refusals(self):
+        """Ключи отчёта не называют отказом имени то, что наблюдение подписывает вердиктом «дефекты
+        найдены»: на лестнице, где 14 шагов дают код 101 со строкой дефекта, `check_rejected` обязан
+        остаться одиночным, а `check_accepted` — включать все остальные 21 шаг."""
+        defect = 'Справочник.РасчётПоказателей.МодульОбъекта Возможно ошибочный метод: "Прочее"'
+        calls = []
+
+        def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
+                 program_kind="marker", write_script=True, cfg="", loadlist=""):
+            calls.append(variant)
+            result = self.synthetic_result(variant)
+            tail = exec_probe.variant_signature(variant)["tail"]
+            if variant.endswith("-module-bogus"):
+                result["code"], result["lines"] = 1, ["Пользователь ИБ не идентифицирован"]
+            elif "-ExtendedModulesCheck" in tail:
+                result["code"], result["lines"] = 101, [defect]
+            else:
+                result["code"], result["lines"] = 0, ["Ошибок не обнаружено"]
+            return result
+
+        original = exec_probe.run
+        exec_probe.run = stub
+        try:
+            for option, ladder in (("--checkkeys", exec_probe.CHECK_LADDER),
+                                   ("--checkconfig", exec_probe.CHECKCMD_LADDER)):
+                calls.clear()
+                with tempfile.TemporaryDirectory() as raw:
+                    local = self.check_local_without_cfg(pathlib.Path(raw))
+                    json_path = pathlib.Path(raw) / "check.json"
+                    code = self.silent_main(["--local", local,
+                                             "--work", str(pathlib.Path(raw) / "work"),
+                                             "--bin", BIN, "--ib", IB, option,
+                                             "--json", str(json_path)])
+                    report = json.loads(json_path.read_text(encoding="utf-8"))
+                variants = [variant for variant, _p, _e in ladder]
+                refused = {variant for variant in variants if variant.endswith("-module-bogus")}
+                expected_defects = {variant for variant in variants
+                                    if "-ExtendedModulesCheck"
+                                    in exec_probe.variant_signature(variant)["tail"]
+                                    and variant not in refused}
+                self.assertEqual(code, 0, option)
+                self.assertEqual(set(report["check_rejected"]), refused, option)
+                self.assertEqual(set(report["check_defect_found"]), expected_defects, option)
+                self.assertEqual(set(report["check_no_defects"]),
+                                 set(variants) - expected_defects - refused, option)
+                self.assertEqual(set(report["check_accepted"]), set(variants) - refused,
+                                 f"{option}: вердикт «дефекты найдены» — не отказ имени")
+                self.assertEqual(set(report["check_verdicts"].values()),
+                                 {"clean", "defects", "refused"}, option)
+                self.assertEqual(report["check_no_verdict"], [], option)
+                self.assertEqual(report["check_timed_out"], [], option)
+        finally:
+            exec_probe.run = original
 
 
 class TestMutatingVariants(unittest.TestCase):
@@ -747,10 +1318,13 @@ class TestPredictions(unittest.TestCase):
                                               exec_probe.EXTENSION_LADDER,
                                               exec_probe.LOADOPTS_LADDER,
                                               exec_probe.UPDATE_LADDER,
-                                              exec_probe.MODE_LADDER)
+                                              exec_probe.MODE_LADDER,
+                                              exec_probe.CHECK_LADDER,
+                                              exec_probe.CHECKCMD_LADDER)
                        for variant, _kind, _encoding in ladder}
 
-    def test_prediction_keys_are_steps_of_the_task16_ladders(self):
+    def test_prediction_keys_are_steps_of_the_measured_ladders(self):
+        """Предсказание стоит только на шаге прогоняемой лестницы (Task 16 или группа проверки)."""
         self.assertTrue(exec_probe.PREDICTIONS)
         for variant in exec_probe.PREDICTIONS:
             self.assertIn(variant, self.LADDER_VARIANTS,

@@ -216,8 +216,8 @@ def prepare_script(work: pathlib.Path, variant: str, label: str, program: str,
 # списка загрузки (`-listFile`). Метки подставляются и в шаблон команды, и в хвост варианта:
 # `-Extension <имя>`, `-listFile <файл>`, `-Format <значение>`. Иначе лестница не могла бы менять
 # значение хвоста отдельным шагом, а тест требует ровно одной изменённой части формы команды.
-CFG_ARG, SCRIPT_ARG, BADDIR_ARG, LIST_ARG = "cfg", "script", "baddir", "listfile"
-PLACEHOLDER_ARGS = (CFG_ARG, SCRIPT_ARG, BADDIR_ARG, LIST_ARG)
+CFG_ARG, SCRIPT_ARG, BADDIR_ARG, LIST_ARG, REPORT_ARG = "cfg", "script", "baddir", "listfile", "reportfile"
+PLACEHOLDER_ARGS = (CFG_ARG, SCRIPT_ARG, BADDIR_ARG, LIST_ARG, REPORT_ARG)
 LOADLIST_NAME = "exec_loadlist.txt"
 
 # Имя корневого файла каталога конфигурации: оно измерено раскладкой (класс `configuration` в
@@ -241,6 +241,61 @@ PREDEFINED_VALUES = ("Auto", "AutoUpdate", "DontAutoUpdate")
 # совпадает с итогом при настоящем значении, платформа значение не проверяет вовсе.
 BOGUS_VALUE = "ZzzNetakogoZnacheniyaNet"
 BOGUS_EXTENSION_NAME = "ZzzNetakogoRasshireniyaNet"
+
+# Имена группы проверки конфигурации, которые до этой итерации не прогоняла ни одна лестница.
+# Все они измерены замером 426 имён (`p1c/src/p1c/data/test_cli_flags.json`); канон их группировки
+# подписывает корпус БСП: обработчик `ПроверкаБСППередСборкой` собирает команду проверки
+# (`corpora_ssl/DataProcessors/ПроверкаБСППередСборкой/Forms/Форма/Ext/Form/Module.bsl`,
+# стр. 2944-2973)
+#   1cv8.exe DESIGNER /IBConnectionString <строка> /N <имя> /P <пароль> /CheckConfig
+#     -ConfigLogIntegrity -IncorrectReferences -ThinClient -WebClient -Server -ExternalConnection
+#     -ExternalConnectionServer -ThickClientManagedApplication -ThickClientServerManagedApplication
+#     -ThickClientOrdinaryApplication -ThickClientServerOrdinaryApplication -DistributiveModules
+#     -UnreferenceProcedures -HandlersExistence -EmptyHandlers -ExtendedModulesCheck /Out <файл>
+#   и дальше (стр. 2975-3034) НЕ смотрит на код возврата: ждёт файл отчёта и разбирает его строки
+#   вида `ВидОбъекта.ИмяОбъекта`. Отчётность — наблюдение самой платформы, поэтому для этих семи
+#   имён источник предсказания читается из файла корпуса.
+CHECK_CORPORA_FLAGS = ("-ConfigLogIntegrity", "-IncorrectReferences", "-DistributiveModules",
+                       "-UnreferenceProcedures", "-HandlersExistence", "-EmptyHandlers",
+                       "-ExtendedModulesCheck")
+# Остальные имена группы измерены только таблицей имён: канонического употребления в корпусах нет
+# (обход `corpora_cli_usage` и `rg` по шести корпусам: 0 вхождений `-WarningsAsErrors`, `-noCheck`,
+# `-Module`, `-NBegin`, `-NEnd`, `-ReportFile`, `-ReportFormat`, `-ReportType` в командной строке).
+# Соседство в таблице имён (`reports/flags-24-checkgroups.json`) подписывает их принадлежность к
+# группе: `-noCheck` стоит сразу после `CheckModules`/`CheckConfig`/`UpdateDBCfg`,
+# `-WarningsAsErrors` — рядом с `Server`, `Right`, `Module`, `Template`, `Help`.
+CHECK_UNCITED_NAMES = ("-WarningsAsErrors", "-noCheck", "-Module", "-NBegin", "-NEnd",
+                       "-ReportFile", "-ReportFormat", "-ReportType")
+CHECK_COMMAND_NAMES = ("/CheckModules", "/CheckConfig")
+CHECK_OPTION_NAMES = CHECK_COMMAND_NAMES + CHECK_CORPORA_FLAGS + CHECK_UNCITED_NAMES
+
+# Значения отчётных опций — только из соседства имени в таблице имён (окно `-ReportFile` замера
+# `reports/flags-24-checkgroups.json`): `... SignCfg ConfigurationType mxl ReportFile ReportFormat
+# txt IncludeDeletedObjects IncludeAddedObjects Full IncludeChangedObjects ReportType Brief
+# ByObjectNames ByObjectIDs SecondFile MappingRule ...`. Иных значений эти имена нигде не подписаны,
+# поэтому третий вариант каждого значения — заведомо вымышленный (`BOGUS_VALUE`).
+REPORT_FORMAT_VALUES = ("mxl", "txt")
+REPORT_TYPE_VALUES = ("Brief", "ByObjectNames", "ByObjectIDs")
+# Имя файла отчёта без расширения: иначе значение `-ReportFormat` спорило бы с именем файла, и
+# «отчёт создан» нельзя было бы отличить от «отчёт создан с другим расширением».
+CHECK_REPORT_NAME = "exec_check_report"
+# Сколько строк отчёта проверки попадает в JSON-замер: полный файл остаётся на диске, в отчёте
+# нужен признак («есть строки вида `ВидОбъекта.ИмяОбъекта»»), а не весь текст.
+REPORT_LINE_LIMIT = 40
+# Имя модуля для значения `-Module`: измерено раскладкой нашей конфигурации
+# (`cfg/CommonModules/РасчётПоказателей/Ext/Module.bsl`).
+CHECK_MODULE_NAME = "РасчётПоказателей"
+
+# Код возврата группы проверки несёт вердикт, а не отказ имени. Замер 44 прогонов на чистой ИБ
+# (`reports/check-24-clean*.json`): код 0 стоит рядом со строкой `Ошибок не обнаружено`
+# (`/CheckConfig`, 43 байта) и `Синтаксических ошибок не обнаружено!` (`/CheckModules`, 73 байта);
+# код 101 стоит рядом со строками вида `Документ.ФактРаботы.МодульОбъекта Возможно ошибочный
+# метод: "Заполнять"` (340 байт) на всех 15 шагах, следующих за первым `-ExtendedModulesCheck`.
+# Отказ имени выглядит иначе: `bogus-slash` (`/ZzzNetakoyKomandyNet`) даёт код 1 и 70 байт
+# `Пользователь ИБ не идентифицирован`, `bogus-dash` — зависание. Поэтому 101 читается как
+# «дефекты найдены», и называть его «имя отвергнуто» нельзя.
+CHECK_CLEAN_CODE = 0
+CHECK_DEFECT_CODE = 101
 
 # Вариант наблюдения -> (режим запуска, команда с аргументом). Имена команд взяты из замера
 # `p1c/src/p1c/data/test_cli_flags.json`; варианта без имени команды нет: платформа без команды
@@ -368,11 +423,117 @@ VARIANT_COMMAND = {
     "enterprise-runscript": ("ENTERPRISE", ["/RunScript", SCRIPT_ARG]),
     # Режим `1С:Предприятие` без команды: проверка, есть ли в ИБ зарегистрированные пользователи.
     "enterprise-plain": ("ENTERPRISE", []),
+    # Группа проверки конфигурации и модулей (Task 24). Два имени команды, измеренные замером:
+    # `/CheckModules` (именован лестницей `--checkkeys`) и `/CheckConfig` (`--checkconfig`).
+    # Базовый шаг каждой лестницы несёт ровно канон шага `check` из `scripts/ib_loop.py`
+    # (`DESIGNER` + `/CheckModules` + `-Server -ThinClient -WebClient -ExternalConnection
+    # -ThickClientOrdinaryApplication` + `/Out`), исход которого подтверждён прогоном контура
+    # (`check_code` = 0 в `reports/gate-14.json`).
+    "check-modules-base": ("DESIGNER", ["/CheckModules"]),
+    # Корпусные флаги проверки (канон БСП, см. комментарий `CHECK_CORPORA_FLAGS`): добавляются по
+    # одному к тому же хвосту, в том же порядке, что и в команде корпуса.
+    "check-modules-configlog": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-references": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-distributive": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-unreferenced": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-handlers": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-emptyhandlers": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-extended": ("DESIGNER", ["/CheckModules"]),
+    # Остальные имена группы: шаг, который заводит файл отчёта, и по одному имени группы поверх
+    # него. Порядок совпадает с порядком лестницы (`CHECK_LADDER`): вымышленное значение стоит
+    # перед настоящим той же опции, а внутри группы отчётных типов первым идёт вымышленное.
+    "check-modules-reportfile": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-warnings-as-errors": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-nocheck": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-nbegin": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-nend": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-module-bogus": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-module": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reportformat-bogus": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reportformat-mxl": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reportformat-txt": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reporttype-bogus": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reporttype-names": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reporttype-ids": ("DESIGNER", ["/CheckModules"]),
+    "check-modules-reporttype-brief": ("DESIGNER", ["/CheckModules"]),
+    # Та же цепь имён, но при команде `/CheckConfig`: лестница `--checkconfig` обязана быть
+    # зеркалом `--checkkeys` — тот же хвост на той же позиции, другое только имя команды. Иначе
+    # «одно имя команды» нельзя сравнить с «тем же набором флагов»: корпусный канон пишет именно
+    # `/CheckConfig` (стр. 2953), а контур проверяет именно `/CheckModules` (`scripts/ib_loop.py`),
+    # и без зеркала осталось бы неизвестным, какой из двух наборов к какой команде относится.
+    "check-config-base": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-configlog": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-references": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-distributive": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-unreferenced": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-handlers": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-emptyhandlers": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-extended": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reportfile": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-warnings-as-errors": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-nocheck": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-nbegin": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-nend": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-module-bogus": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-module": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reportformat-bogus": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reportformat-mxl": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reportformat-txt": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reporttype-bogus": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reporttype-names": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reporttype-ids": ("DESIGNER", ["/CheckConfig"]),
+    "check-config-reporttype-brief": ("DESIGNER", ["/CheckConfig"]),
 }
+
+# Хвост шагов группы проверки. Устройство такое: измеренный префикс (канон `check` из
+# `scripts/ib_loop.py`, затем семь корпусных флагов, затем `-ReportFile`) плюс РОВНО ОДНО имя
+# группы. Каждый шаг после `-ReportFile` добавляет один токен поверх того же префикса, а соседний
+# шаг этот токен заменяет: хвосты соседних шагов имеют одинаковую длину, и позиционное сравнение
+# (`signature_tokens`) даёт ровно один изменённый токен, поэтому новая запись в
+# `TOKEN_MULTI_REASON` этим лестницам не нужна.
+# Такая форма важна не только для дисциплины: флаг предыдущего шага НЕ наследуется следующим. Иначе
+# `-noCheck` (правдоподобно отключает проверку) или вымышленное значение `-ReportFormat` отравили бы
+# наблюдение всех последующих шагов, и «имя принято» нельзя было бы отличить от «предыдущий шаг
+# сломал проверку».
+# Форма флагов со значением — `=`-сцепка (`-ReportFormat=mxl`), как у уже измеренных `-User=1CTest`
+# и `/SetPredefinedDataUpdate=DontAutoUpdate`: флаг и значение одним токеном. Форма «флаг, затем
+# значение следующим токеном» добавила бы два токена за шаг, а лестница модификаторов требует одного.
+# Голые имена (`-ReportFormat` без значения) остаются неиспробованными кандидатами.
+# Клиентские имена канона БСП (`-ThinClient`, `-WebClient`, `-ExternalConnection`,
+# `-ThickClientServerOrdinaryApplication`) в хвост не добавлены: хвост остаётся ровно тем, что
+# уже измерено прогоном контура в шаге `check` (`scripts/ib_loop.py`: `-Server`, `-ThinClient`,
+# `-WebClient`, `-ExternalConnection`, `-ThickClientOrdinaryApplication`), иначе базовый шаг
+# лестницы отличался бы от уже замеренного, а две лестницы — друг от друга.
+CHECK_TAIL_BASE = tuple(ib_loop.CHECK_KEYS)
+CHECK_TAIL_CONFIGLOG = CHECK_TAIL_BASE + ("-ConfigLogIntegrity",)
+CHECK_TAIL_REFERENCES = CHECK_TAIL_CONFIGLOG + ("-IncorrectReferences",)
+CHECK_TAIL_DISTRIBUTIVE = CHECK_TAIL_REFERENCES + ("-DistributiveModules",)
+CHECK_TAIL_UNREFERENCED = CHECK_TAIL_DISTRIBUTIVE + ("-UnreferenceProcedures",)
+CHECK_TAIL_HANDLERS = CHECK_TAIL_UNREFERENCED + ("-HandlersExistence",)
+CHECK_TAIL_EMPTYHANDLERS = CHECK_TAIL_HANDLERS + ("-EmptyHandlers",)
+CHECK_TAIL_EXTENDED = CHECK_TAIL_EMPTYHANDLERS + ("-ExtendedModulesCheck",)
+CHECK_TAIL_REPORTFILE = CHECK_TAIL_EXTENDED + ("-ReportFile=" + REPORT_ARG,)
+# Имена без значения: принято имя или нет — видно по коду возврата и строкам вывода.
+CHECK_TAIL_WARNINGS = CHECK_TAIL_REPORTFILE + ("-WarningsAsErrors",)
+CHECK_TAIL_NOCHECK = CHECK_TAIL_REPORTFILE + ("-noCheck",)
+# Имена со значением: измеренные значения отчётных опций и заведомо вымышленное (`BOGUS_VALUE`).
+CHECK_TAIL_NBEGIN = CHECK_TAIL_REPORTFILE + ("-NBegin=" + BOGUS_VALUE,)
+CHECK_TAIL_NEND = CHECK_TAIL_REPORTFILE + ("-NEnd=" + BOGUS_VALUE,)
+CHECK_TAIL_MODULE_BOGUS = CHECK_TAIL_REPORTFILE + ("-Module=" + BOGUS_VALUE,)
+CHECK_TAIL_MODULE = CHECK_TAIL_REPORTFILE + ("-Module=" + CHECK_MODULE_NAME,)
+CHECK_TAIL_FORMAT_BOGUS = CHECK_TAIL_REPORTFILE + ("-ReportFormat=" + BOGUS_VALUE,)
+CHECK_TAIL_FORMAT_MXL = CHECK_TAIL_REPORTFILE + ("-ReportFormat=" + REPORT_FORMAT_VALUES[0],)
+CHECK_TAIL_FORMAT_TXT = CHECK_TAIL_REPORTFILE + ("-ReportFormat=" + REPORT_FORMAT_VALUES[1],)
+CHECK_TAIL_TYPE_BOGUS = CHECK_TAIL_REPORTFILE + ("-ReportType=" + BOGUS_VALUE,)
+CHECK_TAIL_TYPE_NAMES = CHECK_TAIL_REPORTFILE + ("-ReportType=" + REPORT_TYPE_VALUES[1],)
+CHECK_TAIL_TYPE_IDS = CHECK_TAIL_REPORTFILE + ("-ReportType=" + REPORT_TYPE_VALUES[2],)
+CHECK_TAIL_TYPE_BRIEF = CHECK_TAIL_REPORTFILE + ("-ReportType=" + REPORT_TYPE_VALUES[0],)
 
 # Хвост авторизации варианта. Имена `-User`, `-Pwd`, `-PUser`, `-CurrentUser`, `-AllUsers` и
 # `/authoff` — из замера 426 имён; `-User`/`-Pwd` соответствуют ключам `CmdLine/UserName` и
 # `CmdLine/UserPassword`. Значение присоединяется через `=`, как в других измеренных именах.
+# Хвост шагов проверки (`check-*`) задан именованной цепью выше и в таблице ниже только
+# пересчитывается: базовый шаг обеих лестниц ровно равен канону `check` из `scripts/ib_loop.py`.
 VARIANT_TAIL = {
     "load-authoff": ["/authoff"],
     "load-allusers": ["-AllUsers"],
@@ -419,6 +580,51 @@ VARIANT_TAIL = {
     # `-Server` (имя из замера) — форма канонического макета обновления: `/UpdateDBCfg -server`.
     "update-dbcfg-server": ["-Server"],
     "config-update-dbcfg-server": ["-Server"],
+    # Группа проверки (`--checkkeys`, `--checkconfig`): одна и та же цепь хвостов у обеих лестниц.
+    "check-modules-base": list(CHECK_TAIL_BASE),
+    "check-modules-configlog": list(CHECK_TAIL_CONFIGLOG),
+    "check-modules-references": list(CHECK_TAIL_REFERENCES),
+    "check-modules-distributive": list(CHECK_TAIL_DISTRIBUTIVE),
+    "check-modules-unreferenced": list(CHECK_TAIL_UNREFERENCED),
+    "check-modules-handlers": list(CHECK_TAIL_HANDLERS),
+    "check-modules-emptyhandlers": list(CHECK_TAIL_EMPTYHANDLERS),
+    "check-modules-extended": list(CHECK_TAIL_EXTENDED),
+    "check-modules-reportfile": list(CHECK_TAIL_REPORTFILE),
+    "check-modules-warnings-as-errors": list(CHECK_TAIL_WARNINGS),
+    "check-modules-nocheck": list(CHECK_TAIL_NOCHECK),
+    "check-modules-nbegin": list(CHECK_TAIL_NBEGIN),
+    "check-modules-nend": list(CHECK_TAIL_NEND),
+    "check-modules-module-bogus": list(CHECK_TAIL_MODULE_BOGUS),
+    "check-modules-module": list(CHECK_TAIL_MODULE),
+    "check-modules-reportformat-bogus": list(CHECK_TAIL_FORMAT_BOGUS),
+    "check-modules-reportformat-mxl": list(CHECK_TAIL_FORMAT_MXL),
+    "check-modules-reportformat-txt": list(CHECK_TAIL_FORMAT_TXT),
+    "check-modules-reporttype-bogus": list(CHECK_TAIL_TYPE_BOGUS),
+    "check-modules-reporttype-names": list(CHECK_TAIL_TYPE_NAMES),
+    "check-modules-reporttype-ids": list(CHECK_TAIL_TYPE_IDS),
+    "check-modules-reporttype-brief": list(CHECK_TAIL_TYPE_BRIEF),
+    "check-config-base": list(CHECK_TAIL_BASE),
+    "check-config-configlog": list(CHECK_TAIL_CONFIGLOG),
+    "check-config-references": list(CHECK_TAIL_REFERENCES),
+    "check-config-distributive": list(CHECK_TAIL_DISTRIBUTIVE),
+    "check-config-unreferenced": list(CHECK_TAIL_UNREFERENCED),
+    "check-config-handlers": list(CHECK_TAIL_HANDLERS),
+    "check-config-emptyhandlers": list(CHECK_TAIL_EMPTYHANDLERS),
+    "check-config-extended": list(CHECK_TAIL_EXTENDED),
+    "check-config-reportfile": list(CHECK_TAIL_REPORTFILE),
+    "check-config-warnings-as-errors": list(CHECK_TAIL_WARNINGS),
+    "check-config-nocheck": list(CHECK_TAIL_NOCHECK),
+    "check-config-nbegin": list(CHECK_TAIL_NBEGIN),
+    "check-config-nend": list(CHECK_TAIL_NEND),
+    "check-config-module-bogus": list(CHECK_TAIL_MODULE_BOGUS),
+    "check-config-module": list(CHECK_TAIL_MODULE),
+    "check-config-reportformat-bogus": list(CHECK_TAIL_FORMAT_BOGUS),
+    "check-config-reportformat-mxl": list(CHECK_TAIL_FORMAT_MXL),
+    "check-config-reportformat-txt": list(CHECK_TAIL_FORMAT_TXT),
+    "check-config-reporttype-bogus": list(CHECK_TAIL_TYPE_BOGUS),
+    "check-config-reporttype-names": list(CHECK_TAIL_TYPE_NAMES),
+    "check-config-reporttype-ids": list(CHECK_TAIL_TYPE_IDS),
+    "check-config-reporttype-brief": list(CHECK_TAIL_TYPE_BRIEF),
 }
 
 # Варианты, которые могут изменить состояние ИБ: обновить конфигурацию или структуру базы данных,
@@ -489,6 +695,26 @@ PREDICTION_SOURCE = ("corpora_ssl",
 PREDICTION_KINDS = ("corpora", "kontur")
 PREDICTION_OUTCOMES = ("code0", "nonzero")
 
+# Источник предсказаний группы проверки (Task 24) — обработчик `ПроверкаБСППередСборкой`: он сам
+# собирает команду проверки (стр. 2944-2973) и сам читает её отчёт (стр. 2996-3032). Это единственный
+# доступный источник, который связывает имена группы проверки с рабочей командой платформы.
+CHECK_PREDICTION_SOURCE = ("corpora_ssl",
+                           "DataProcessors/ПроверкаБСППередСборкой/Forms/Форма/Ext/Form/Module.bsl")
+
+
+def prediction_source(record: dict) -> tuple:
+    """Путь источника корпусного предсказания: общий `PREDICTION_SOURCE` либо источник, записанный
+    в самой предсказании (`corpora_source`) — у группы проверки он свой, со своей цитатой."""
+    return record.get("corpora_source", PREDICTION_SOURCE)
+
+
+# Предсказания группы проверки (Task 24). Смысл предсказания здесь — «имя принято платформой», а не
+# «дефект найден»: канон корпуса добавляет все эти имена в одну команду (`/CheckConfig` и флаги),
+# значит отказ имени делает каноническую проверку корпуса нерабочей. Отчёт корпуса при этом НЕ
+# проверяет код процесса: исход «нашёл прогон дефект или нет» живёт в строках отчёта и в ключах
+# `check_object_names` замера, а не в предсказании.
+# Базовый шаг `--checkkeys` предсказан прогоном контура: `check_code` = 0 (гейт). Базовый шаг
+# `--checkconfig` предсказан корпусом: он называет это имя команды в своей команде проверки.
 PREDICTIONS = {
     "load-ok": {"kind": "kontur", "predicts": "code0", "source": "reports/gate-11.json",
                 "source_key": "load_code", "needle": "load_code",
@@ -514,6 +740,110 @@ PREDICTIONS = {
     "load-format-plain": {"kind": "corpora", "predicts": "code0", "needle": "Plain",
                           "quote": "«Plain - загрузка выполняется в линейном формате» (стр. 492)",
                           "note": "значение из канона БСП"},
+    # Группа проверки (`--checkkeys`, `--checkconfig`). Базовый шаг первой лестницы — эталон,
+    # подтверждённый прогоном контура; остальные предсказаны цитатой корпуса.
+    "check-modules-base": {"kind": "kontur", "predicts": "code0", "source": "reports/gate-14.json",
+                           "source_key": "check_code", "needle": "check_code",
+                           "quote": "гейт: `check_code` = 0 при `DESIGNER /CheckModules` с "
+                                    "модификаторами `CHECK_KEYS` (2.0 с, 73 байта `/Out`)",
+                           "note": "этот шаг — эталон сравнения обеих лестниц группы проверки"},
+    "check-config-base": {"kind": "corpora", "predicts": "code0",
+                          "corpora_source": CHECK_PREDICTION_SOURCE, "needle": "/CheckConfig",
+                          "quote": "канон корпуса добавляет в команду проверки «/CheckConfig» "
+                                   "(стр. 2953)",
+                          "note": "предсказание отвечает только на «имя принято»: код процесса "
+                                  "канон не разбирает, отчёт он читает из файла `/Out`"},
+    "check-modules-configlog": {"kind": "corpora", "predicts": "code0",
+                                "corpora_source": CHECK_PREDICTION_SOURCE,
+                                "needle": "-ConfigLogIntegrity",
+                                "quote": "канон корпуса добавляет в команду проверки "
+                                         "«-ConfigLogIntegrity» (стр. 2954)",
+                                "note": "корпус называет этот флаг при `/CheckConfig`, здесь он "
+                                        "идёт при `/CheckModules`"},
+    "check-config-configlog": {"kind": "corpora", "predicts": "code0",
+                               "corpora_source": CHECK_PREDICTION_SOURCE,
+                               "needle": "-ConfigLogIntegrity",
+                               "quote": "канон корпуса добавляет в команду проверки "
+                                        "«-ConfigLogIntegrity» (стр. 2954)",
+                               "note": "тот же флаг при той же команде, что и в каноне"},
+    "check-modules-references": {"kind": "corpora", "predicts": "code0",
+                                 "corpora_source": CHECK_PREDICTION_SOURCE,
+                                 "needle": "-IncorrectReferences",
+                                 "quote": "канон корпуса добавляет в команду проверки "
+                                          "«-IncorrectReferences» (стр. 2955)",
+                                 "note": "корпус называет этот флаг при `/CheckConfig`, здесь он "
+                                         "идёт при `/CheckModules`"},
+    "check-config-references": {"kind": "corpora", "predicts": "code0",
+                                "corpora_source": CHECK_PREDICTION_SOURCE,
+                                "needle": "-IncorrectReferences",
+                                "quote": "канон корпуса добавляет в команду проверки "
+                                         "«-IncorrectReferences» (стр. 2955)",
+                                "note": "тот же флаг при той же команде, что и в каноне"},
+    "check-modules-distributive": {"kind": "corpora", "predicts": "code0",
+                                   "corpora_source": CHECK_PREDICTION_SOURCE,
+                                   "needle": "-DistributiveModules",
+                                   "quote": "канон корпуса добавляет в команду проверки "
+                                            "«-DistributiveModules» (стр. 2965)",
+                                   "note": "корпус называет этот флаг при `/CheckConfig`, здесь "
+                                           "он идёт при `/CheckModules`"},
+    "check-config-distributive": {"kind": "corpora", "predicts": "code0",
+                                  "corpora_source": CHECK_PREDICTION_SOURCE,
+                                  "needle": "-DistributiveModules",
+                                  "quote": "канон корпуса добавляет в команду проверки "
+                                           "«-DistributiveModules» (стр. 2965)",
+                                  "note": "тот же флаг при той же команде, что и в каноне"},
+    "check-modules-unreferenced": {"kind": "corpora", "predicts": "code0",
+                                   "corpora_source": CHECK_PREDICTION_SOURCE,
+                                   "needle": "-UnreferenceProcedures",
+                                   "quote": "канон корпуса добавляет в команду проверки "
+                                            "«-UnreferenceProcedures» (стр. 2966)",
+                                   "note": "корпус называет этот флаг при `/CheckConfig`, здесь "
+                                           "он идёт при `/CheckModules`"},
+    "check-config-unreferenced": {"kind": "corpora", "predicts": "code0",
+                                  "corpora_source": CHECK_PREDICTION_SOURCE,
+                                  "needle": "-UnreferenceProcedures",
+                                  "quote": "канон корпуса добавляет в команду проверки "
+                                           "«-UnreferenceProcedures» (стр. 2966)",
+                                  "note": "тот же флаг при той же команде, что и в каноне"},
+    "check-modules-handlers": {"kind": "corpora", "predicts": "code0",
+                               "corpora_source": CHECK_PREDICTION_SOURCE,
+                               "needle": "-HandlersExistence",
+                               "quote": "канон корпуса добавляет в команду проверки "
+                                        "«-HandlersExistence» (стр. 2967)",
+                               "note": "корпус называет этот флаг при `/CheckConfig`, здесь он "
+                                       "идёт при `/CheckModules`"},
+    "check-config-handlers": {"kind": "corpora", "predicts": "code0",
+                              "corpora_source": CHECK_PREDICTION_SOURCE,
+                              "needle": "-HandlersExistence",
+                              "quote": "канон корпуса добавляет в команду проверки "
+                                       "«-HandlersExistence» (стр. 2967)",
+                              "note": "тот же флаг при той же команде, что и в каноне"},
+    "check-modules-emptyhandlers": {"kind": "corpora", "predicts": "code0",
+                                    "corpora_source": CHECK_PREDICTION_SOURCE,
+                                    "needle": "-EmptyHandlers",
+                                    "quote": "канон корпуса добавляет в команду проверки "
+                                             "«-EmptyHandlers» (стр. 2968)",
+                                    "note": "корпус называет этот флаг при `/CheckConfig`, здесь "
+                                            "он идёт при `/CheckModules`"},
+    "check-config-emptyhandlers": {"kind": "corpora", "predicts": "code0",
+                                   "corpora_source": CHECK_PREDICTION_SOURCE,
+                                   "needle": "-EmptyHandlers",
+                                   "quote": "канон корпуса добавляет в команду проверки "
+                                            "«-EmptyHandlers» (стр. 2968)",
+                                   "note": "тот же флаг при той же команде, что и в каноне"},
+    "check-modules-extended": {"kind": "corpora", "predicts": "code0",
+                               "corpora_source": CHECK_PREDICTION_SOURCE,
+                               "needle": "-ExtendedModulesCheck",
+                               "quote": "канон корпуса добавляет в команду проверки "
+                                        "«-ExtendedModulesCheck» (стр. 2969)",
+                               "note": "корпус называет этот флаг при `/CheckConfig`, здесь он "
+                                       "идёт при `/CheckModules`"},
+    "check-config-extended": {"kind": "corpora", "predicts": "code0",
+                              "corpora_source": CHECK_PREDICTION_SOURCE,
+                              "needle": "-ExtendedModulesCheck",
+                              "quote": "канон корпуса добавляет в команду проверки "
+                                       "«-ExtendedModulesCheck» (стр. 2969)",
+                              "note": "тот же флаг при той же команде, что и в каноне"},
 }
 
 
@@ -522,7 +852,7 @@ def verify_prediction_sources(local_file: str, root_dir: pathlib.Path) -> dict:
 
     `root_dir` — каталог проекта: путь источника отчёта контура записан относительно него
     (`reports/gate-11.json`), путь корпуса — относительно значения ключа `corpora_*` из
-    `local.paths.json`.
+    `local.paths.json`. У корпусных предсказаний группы проверки путь свой (`prediction_source`).
 
     Возвращает по варианту `{source, file_found, needle_found}`: `file_found` — файл источника
     есть, `needle_found` — в файле корпуса есть цитируемое имя (для `kontur` — отчёт есть и
@@ -532,7 +862,7 @@ def verify_prediction_sources(local_file: str, root_dir: pathlib.Path) -> dict:
     result = {}
     for variant, record in sorted(PREDICTIONS.items()):
         if record["kind"] == "corpora":
-            key, relative = PREDICTION_SOURCE
+            key, relative = prediction_source(record)
             root = local.get(key, "")
             path = pathlib.Path(root) / relative if root else None
             found = bool(path and path.is_file())
@@ -665,7 +995,8 @@ def variant_argv(variant: str, bin_path: str, ib: str, script: pathlib.Path,
     даются аргументами.
 
     Метки подставляются и в шаблон команды, и в хвост: `-Extension <имя>`, `-listFile <файл>`,
-    `-Format <значение>` — иначе модификатор нельзя было бы передать вовсе.
+    `-Format <значение>` — иначе модификатор нельзя было бы передать вовсе. Метка стоит и внутри
+    `=`-сцепки (`-ReportFile=reportfile` -> `-ReportFile=<каталог прогона>/exec_check_report`).
     """
     if variant in VARIANT_COMMAND:
         mode, template = VARIANT_COMMAND[variant]
@@ -678,9 +1009,10 @@ def variant_argv(variant: str, bin_path: str, ib: str, script: pathlib.Path,
     values = {CFG_ARG: cfg,
               SCRIPT_ARG: str(script),
               BADDIR_ARG: str((work or pathlib.Path("work")) / "no-such-directory"),
-              LIST_ARG: loadlist}
-    program = [values.get(item, item) for item in template]
-    tail = [values.get(item, item) for item in VARIANT_TAIL.get(variant, ())]
+              LIST_ARG: loadlist,
+              REPORT_ARG: str(report_file_for(work))}
+    program = [substitute_placeholders(item, values) for item in template]
+    tail = [substitute_placeholders(item, values) for item in VARIANT_TAIL.get(variant, ())]
     base = [bin_path, mode, "/F", ib, "/Out", str(out_file), "/DisableStartupDialogs"]
     return base + program + tail
 
@@ -734,6 +1066,138 @@ def program_text(program: str, marker: pathlib.Path) -> str:
     return program.replace("$marker$", str(marker).replace("\\", "/"))
 
 
+def report_file_for(work: pathlib.Path | None) -> pathlib.Path:
+    """Каталог прогона + имя отчёта проверки: то, чем платформа заменяет метку `reportfile`."""
+    return (work or pathlib.Path("work")) / CHECK_REPORT_NAME
+
+
+def substitute_placeholders(token: str, values: dict) -> str:
+    """Подстановка метки в токен argv: отдельным токеном (`-listFile listfile`) или внутри `=`
+    (`-ReportFile=reportfile`). Имя флага подстановка не меняет: тест имён сверяет часть токена
+    до `=`, а `variant_signature` держит токен как есть, чтобы сравнение шагов лестницы осталось
+    позиционным."""
+    name, sep, value = token.partition("=")
+    if not sep:
+        return values.get(token, token)
+    return name + "=" + values.get(value, value)
+
+
+def report_arg_from_argv(argv: list) -> pathlib.Path | None:
+    """Путь отчёта из argv: `=`-форма (`-ReportFile=<путь>`) и форма со следующим токеном
+    (`-ReportFile <путь>`), потому что обе формы имени измерены таблицей, а какая принимается —
+    как раз предмет замера."""
+    for index, token in enumerate(argv):
+        name, _sep, value = token.partition("=")
+        if name != "-ReportFile":
+            continue
+        if value:
+            return pathlib.Path(value)
+        if index + 1 < len(argv):
+            return pathlib.Path(argv[index + 1])
+    return None
+
+
+def capture_report(path: pathlib.Path | None, work: pathlib.Path) -> dict:
+    """Наблюдение за файлом отчёта проверки: создан ли, сколько в нём байт и строк, и не появился
+    ли рядом файл с тем же именем, но другим расширением.
+
+    Отчётность здесь — отдельное наблюдение, а не деталь кода возврата: канон корпуса БСП исход
+    проверки определяет именно по файлу отчёта (стр. 2975-3034 обработчика
+    `ПроверкаБСППередСборкой`), а не по коду. Строки отчёта ограничены первыми
+    `REPORT_LINE_LIMIT`: полный текст остаётся на диске, в отчёте замеров он не нужен целиком.
+    """
+    if path is None:
+        return {"report_asked": False, "report_exists": False, "report_bytes": 0,
+                "report_lines": [], "report_line_count": 0, "report_siblings": []}
+    exists = path.is_file()
+    siblings = sorted(item.name for item in work.glob(path.name + ".*")
+                      if item.is_file() and item != path)
+    if not exists:
+        return {"report_asked": True, "report_path": path.as_posix(), "report_exists": False,
+                "report_bytes": 0, "report_lines": [], "report_line_count": 0,
+                "report_siblings": siblings}
+    text = ib_loop.decode_output(path.read_bytes())
+    lines = [line for line in text.splitlines() if line.strip()]
+    return {"report_asked": True, "report_path": path.as_posix(), "report_exists": True,
+            "report_bytes": path.stat().st_size, "report_lines": lines[:REPORT_LINE_LIMIT],
+            "report_line_count": len(lines), "report_siblings": siblings}
+
+
+# Как канон корпуса читает отчёт проверки (стр. 2996-3027 обработчика `ПроверкаБСППередСборкой`):
+# строки «Соединение с хранилищем конфигурации не установлено» и содержащие `Подключаемый_`
+# пропускаются (стр. 2998-2999), из остальных снимается `{` (стр. 3004-3008), первый токен делится
+# по точке, и если частей меньше двух — строка не относится к объекту конфигурации (стр. 3010-3015).
+# Отчётность группы проверки живёт именно здесь, а не в коде возврата: код отвечает на вопрос,
+# принято ли имя, а «нашёл ли прогон дефект» видно по строкам с полным именем объекта.
+CHECK_REPORT_SKIP_MARKERS = ("Соединение с хранилищем конфигурации не установлено", "Подключаемый_")
+
+
+def object_lines(lines) -> list:
+    """Полные имена объектов из строк отчёта проверки: `ВидОбъекта.ИмяОбъекта`, как в каноне.
+
+    Строка без точки в первом токене — служебное сообщение, а не дефект объекта: канон её
+    отбрасывает (стр. 3013-3015). Порядок сохраняется, повтор не схлопывается: повторная строка
+    того же объекта — отдельный дефект. Полные строки остаются в `lines`, `console_lines` и
+    `report_lines`, поэтому спорную строку можно перечитать глазами, а не довериться правилу.
+    """
+    names = []
+    for raw in lines:
+        line = raw.strip()
+        if not line or any(marker in line for marker in CHECK_REPORT_SKIP_MARKERS):
+            continue
+        parts = line.replace("{", "").split(" ")[0].split(".")
+        if len(parts) < 2:
+            continue
+        names.append(parts[0] + "." + parts[1])
+    return names
+
+
+def check_verdict(code: int, object_line_count: int) -> str:
+    """Вердикт шага группы проверки, отделённый от отказа в имени.
+
+    Разделение нужно потому, что один ключ `code` отвечает на два разных вопроса, и ответы на них
+    дают разные вещи: код процесса и строки отчёта. `defects` — есть строки вида
+    `ВидОбъекта.ИмяОбъекта` (в замере чистой ИБ это код 101); `clean` — код 0 без таких строк
+    (в замере это `Ошибок не обнаружено` / `Синтаксических ошибок не обнаружено!`); `no_verdict`
+    — код 101 без строк объекта: платформа вернула вердикт «есть ошибки», но прочесть, о чём
+    именно они, по этому шагу нельзя; `refused` — прочие коды (в замере: код 1 и строка о
+    идентификаторе ИБ у заведомо отсутствующего имени).
+    """
+    if object_line_count:
+        return "defects"
+    if code == CHECK_CLEAN_CODE:
+        return "clean"
+    if code == CHECK_DEFECT_CODE:
+        return "no_verdict"
+    return "refused"
+
+
+def check_observation(result: dict) -> dict:
+    """Наблюдение одного шага группы проверки: принят ли флаг (код) и найден ли дефект (строки).
+
+    Смотрят три места, куда платформа способна записать сообщение проверки, разом: `/Out` (канон
+    корпуса передаёт именно его, стр. 2970-2971), собственный stdout/stderr процесса и файл,
+    названный `-ReportFile`. Ни одно из них не объявлено «правильным» заранее, поэтому наблюдение
+    не выбирает одно наугад: пустой исход означает «ни в одном из трёх мест строки объекта нет».
+
+    `accepted` читается из вердикта, а не из кода напрямую: код 101 — это принятая команда,
+    нашедшая дефекты, и `accepted` для неё истина.
+    """
+    names = object_lines(list(result["lines"]) + list(result["console_lines"]))
+    report = result["report"]
+    report_names = object_lines(report["report_lines"])
+    line_count = len(names) + len(report_names)
+    verdict = check_verdict(result["code"], line_count)
+    return {"code": result["code"], "timed_out": result["timed_out"], "verdict": verdict,
+            "accepted": verdict in ("clean", "defects"),
+            "out_lines": len(result["lines"]), "console_line_count": len(result["console_lines"]),
+            "report_exists": report["report_exists"], "report_bytes": report["report_bytes"],
+            "report_line_count": report["report_line_count"],
+            "report_siblings": report["report_siblings"],
+            "object_names": (names + report_names)[:REPORT_LINE_LIMIT],
+            "object_line_count": line_count}
+
+
 def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
         timeout: int = 120, encoding: str = "utf-8", program_kind: str = "marker",
         write_script: bool = True, cfg: str = "", loadlist: str = "") -> dict:
@@ -762,6 +1226,12 @@ def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
     script, script_written = prepare_script(work, variant, label, program, encoding,
                                             marker, write_script)
     argv = variant_argv(variant, bin_path, ib, script, out_file, marker, cfg, work, loadlist)
+    # Файл отчёта проверки снимается ДО прогона: «отчёт создан» должно означать «создан этим
+    # прогоном», иначе наблюдение `-ReportFile` наследует след прежнего шага лестницы (в лестнице
+    # он стоит уже добавленным флагом).
+    report_path = report_arg_from_argv(argv)
+    if report_path is not None and report_path.is_file():
+        report_path.unlink()
     # Собственный stdout/stderr процесса пишутся в отдельные файлы: у отказа класса «код 1 без
     # сообщения в /Out» (наблюдение runscript) больше нигде оставаться не должно.
     console_out, console_err = (work / f"exec_{variant}_{label}_stdout.txt"), \
@@ -808,6 +1278,7 @@ def run(bin_path: str, ib: str, program: str, variant: str, work: pathlib.Path,
         "script_bytes": script.stat().st_size if script.exists() else 0,
         "script_path": script.as_posix(),
         "program_kind": program_kind,
+        "report": capture_report(report_path, work),
     }
 
 
@@ -878,6 +1349,17 @@ def main(argv: list | None = None) -> int:
                         help="лестница MODE_LADDER: один шаг, меняющий только режим запуска "
                              "(`DESIGNER` -> `CONFIG`) при неизменной команде загрузки; делает "
                              "вариант `config-load-ok` достижимым названной лестницей")
+    parser.add_argument("--checkkeys", action="store_true",
+                        help="лестница CHECK_LADDER: команда `/CheckModules` и имена группы "
+                             "проверки замера — семь корпусных флагов (`-ConfigLogIntegrity`, "
+                             "`-IncorrectReferences`, `-DistributiveModules`, "
+                             "`-UnreferenceProcedures`, `-HandlersExistence`, `-EmptyHandlers`, "
+                             "`-ExtendedModulesCheck`) и отчётные опции (`-ReportFile`, "
+                             "`-ReportFormat`, `-ReportType`, `-Module`, `-noCheck`)")
+    parser.add_argument("--checkconfig", action="store_true",
+                        help="лестница CHECKCMD_LADDER: полное зеркало `CHECK_LADDER` (те же 22 "
+                             "шага и те же хвосты), но команда `/CheckConfig` — та, которую в своей "
+                             "команде проверки пишет корпус БСП")
     parser.add_argument("--allow-mutating", action="store_true",
                         help="разрешить варианты из MUTATING_VARIANTS: они способны изменить "
                              "состояние ИБ. Без этого флага такая лестница не запускается (код 2). "
@@ -924,6 +1406,10 @@ def main(argv: list | None = None) -> int:
         ladder, ladder_name = UPDATE_LADDER, "UPDATE_LADDER"
     elif args.modes:
         ladder, ladder_name = MODE_LADDER, "MODE_LADDER"
+    elif args.checkkeys:
+        ladder, ladder_name = CHECK_LADDER, "CHECK_LADDER"
+    elif args.checkconfig:
+        ladder, ladder_name = CHECKCMD_LADDER, "CHECKCMD_LADDER"
     elif args.sweep:
         ladder, ladder_name = SWEEP, "SWEEP"
     elif args.programs:
@@ -1131,6 +1617,82 @@ def main(argv: list | None = None) -> int:
         print("вывод платформы дал:", report["test_output_variants"])
         print("молчат:", report["test_silent_variants"])
         print("зависли:", report["test_timed_out"])
+    if args.checkkeys or args.checkconfig:
+        # Наблюдение группы проверки. У шага два разных факта: код процесса (в замере: 0 — «ошибок
+        # не обнаружено», 101 — «ошибки найдены») и строки с полным именем объекта
+        # (`object_lines`). Их сводит вместе `check_verdict`: код сам по себе не различает вердикт
+        # проверки и отказ имени. Маркер программы эти прогоны не ставят: команда проверки
+        # файл программы не читает, поэтому «прогон дошёл» меряется здесь кодом процесса и следом в
+        # одном из трёх мест (`/Out`, консоль процесса, файл `-ReportFile`) — отдельным ключом, а не
+        # молчаливым наследованием `executed_variants`, которое осталось бы пустым.
+        observations = {r["variant"]: check_observation(r) for r in results}
+        report["check_observation"] = observations
+        report["check_verdicts"] = {v: o["verdict"] for v, o in sorted(observations.items())}
+        # «Имя принято» здесь означает «платформа вынесла читаемый вердикт проверки» (код 0 или
+        # код 101 со строками дефектов), а не «код равен нулю»: иначе 15 шагов `/CheckConfig` с
+        # найденными дефектами оказались бы записаны как отказ имени.
+        report["check_accepted"] = sorted(v for v, o in observations.items() if o["accepted"])
+        report["check_rejected"] = sorted(v for v, o in observations.items()
+                                          if o["verdict"] == "refused" and not o["timed_out"])
+        report["check_defect_found"] = sorted(v for v, o in observations.items()
+                                              if o["verdict"] == "defects")
+        report["check_no_defects"] = sorted(v for v, o in observations.items()
+                                            if o["verdict"] == "clean")
+        report["check_no_verdict"] = sorted(v for v, o in observations.items()
+                                            if o["verdict"] == "no_verdict")
+        report["check_timed_out"] = sorted(v for v, o in observations.items() if o["timed_out"])
+        report["check_report_files"] = sorted(v for v, o in observations.items()
+                                              if o["report_exists"])
+        report["check_object_line_count"] = {v: o["object_line_count"]
+                                             for v, o in sorted(observations.items())}
+        report["check_object_names"] = {v: o["object_names"]
+                                        for v, o in sorted(observations.items())
+                                        if o["object_line_count"]}
+        traced = sorted(v for v, o in observations.items()
+                        if o["out_lines"] or o["console_line_count"] or o["report_exists"])
+        report["check_trace_variants"] = traced
+        report["check_silent_variants"] = sorted(set(observations) - set(traced))
+        report["check_progress"] = sorted(v for v, o in observations.items() if not o["timed_out"])
+        report["execution_confirmed"] = bool(traced) and len(report["check_progress"]) == len(results)
+        ladder_variants = [variant for variant, _kind, _encoding in ladder]
+        # Зеркало лестниц: хвост одинаковый, различие — только в имени команды. Если зеркало не
+        # держится, наблюдение одного шага нельзя сравнить с наблюдением парного шага.
+        report["check_mirror_same_tail"] = all(
+            variant_signature(variant)["tail"]
+            == variant_signature(check_mirror_variant(variant))["tail"]
+            for variant in ladder_variants)
+        report["check_mirror_differs_by_command_only"] = all(
+            signature_diff(variant_signature(variant),
+                           variant_signature(check_mirror_variant(variant))) == ["names"]
+            for variant in ladder_variants)
+        unpredicted = check_unpredicted_steps(ladder)
+        report["check_predicted_steps"] = check_predicted_steps(ladder)
+        report["check_unpredicted_steps"] = unpredicted
+        report["check_unpredicted_matches_list"] = (
+            set(unpredicted) == (CHECK_OBSERVATION_ONLY & set(ladder_variants)))
+        print("наблюдение группы проверки:")
+        for variant in sorted(observations):
+            value = observations[variant]
+            print(f"   {variant}: код {value['code']} ({value['verdict']}), строк объекта "
+                  f"{value['object_line_count']},"
+                  f" /Out {value['out_lines']}, консоль {value['console_line_count']},"
+                  f" отчёт {value['report_exists']} ({value['report_bytes']} б)")
+            for name in value["object_names"][:6]:
+                print("      объект:", name)
+        print("имя принято (вердикт читается):", len(report["check_accepted"]), "из", len(results))
+        print("дефекты найдены:", report["check_defect_found"])
+        print("дефектов нет:", report["check_no_defects"])
+        print("имя отвергнуто:", report["check_rejected"],
+              "| вердикт не читается:", report["check_no_verdict"],
+              "| зависло:", report["check_timed_out"])
+        print("файл отчёта создан:", report["check_report_files"])
+        print("след прогона:", report["check_trace_variants"] or "ни один шаг не оставил следа",
+              "| молчат:", report["check_silent_variants"])
+        print("зеркало лестниц: хвост совпадает:", report["check_mirror_same_tail"],
+              "| различие только в имени команды:",
+              report["check_mirror_differs_by_command_only"])
+        print("шаги без предсказания:", len(report["check_unpredicted_steps"]),
+              "| сверяется со списком:", report["check_unpredicted_matches_list"])
     if args.json:
         out = pathlib.Path(args.json)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -1152,6 +1714,15 @@ def main(argv: list | None = None) -> int:
         # наличие `--allow-mutating`. Состав исходов (имя принято или отвергнуто, предсказание
         # сбылось или опровергнуто) живёт в ключах отчёта `predictions*`, а не в коде: и «имя
         # принято», и «имя отвергнуто» — находки.
+        if not report["prediction_sources_ok"]:
+            print("exec_probe: источник предсказания не читается: предсказание без источника "
+                  "предсказанием не считается", file=sys.stderr)
+        return 0 if (ladder_ok(report) and report["prediction_sources_ok"]) else 1
+    if args.checkkeys or args.checkconfig:
+        # Код отвечает за дисциплину: один токен команды на шаг, зеркало лестниц, читаемый источник
+        # предсказания. Состав исходов («имя принято», «имя отвергнуто», «дефект найден», «отчёт
+        # создан») живёт в ключах `check_*`: и принято, и отвергнуто — находки наблюдения, а не
+        # ошибка прогона.
         if not report["prediction_sources_ok"]:
             print("exec_probe: источник предсказания не читается: предсказание без источника "
                   "предсказанием не считается", file=sys.stderr)
@@ -1291,6 +1862,121 @@ UPDATE_LADDER = (("load-ok", "marker", "cp1251"),
 # предсказания; эталонный `load-ok` при этом предсказан (`kontur`: `load_code` = 0).
 MODE_LADDER = (("load-ok", "marker", "cp1251"),
                ("config-load-ok", "marker", "cp1251"))
+
+# Лестницы группы проверки (Task 24). Их две, и они полные зеркала: 22 имени шагов в том же порядке,
+# различается только имя команды — `/CheckModules` у `--checkkeys`, `/CheckConfig` у `--checkconfig`.
+# Зеркало нужно потому, что источники расходятся: корпусный канон проверки пишет `/CheckConfig` и
+# семь корпусных флагов (стр. 2953-2969), а контур (`scripts/ib_loop.py`, шаг `check`) прогоняет
+# `/CheckModules` пятью клиентскими модификаторами, и его исход уже замерен (`check_code` = 0 в
+# `reports/gate-14.json`). Одноимённые шаги различаются только именем команды, поэтому «имя принято»
+# или «имя отвергнуто» нельзя случайно приписать другой команде.
+# Базовые шаги названы `check-modules-base` и `check-config-base` (не `check-config-command`): пара
+# базовых шагов и есть сравнение «одна переменная — имя команды», остальные 21 шаг сравниваются так же.
+# Порядок шагов: измеренный канон (`CHECK_TAIL_BASE`), затем семь корпусных флагов в порядке корпуса,
+# затем флаг файла отчёта, затем по одному имени группы поверх него. Вымышленное значение опции стоит
+# перед настоящим той же опции, а вымышленное значение отчётного типа — первым в своей группе: так
+# видно, проверяет ли платформа значение вообще.
+CHECK_LADDER = (("check-modules-base", "marker", "cp1251"),
+                ("check-modules-configlog", "marker", "cp1251"),
+                ("check-modules-references", "marker", "cp1251"),
+                ("check-modules-distributive", "marker", "cp1251"),
+                ("check-modules-unreferenced", "marker", "cp1251"),
+                ("check-modules-handlers", "marker", "cp1251"),
+                ("check-modules-emptyhandlers", "marker", "cp1251"),
+                ("check-modules-extended", "marker", "cp1251"),
+                ("check-modules-reportfile", "marker", "cp1251"),
+                ("check-modules-warnings-as-errors", "marker", "cp1251"),
+                ("check-modules-nocheck", "marker", "cp1251"),
+                ("check-modules-nbegin", "marker", "cp1251"),
+                ("check-modules-nend", "marker", "cp1251"),
+                ("check-modules-module-bogus", "marker", "cp1251"),
+                ("check-modules-module", "marker", "cp1251"),
+                ("check-modules-reportformat-bogus", "marker", "cp1251"),
+                ("check-modules-reportformat-mxl", "marker", "cp1251"),
+                ("check-modules-reportformat-txt", "marker", "cp1251"),
+                ("check-modules-reporttype-bogus", "marker", "cp1251"),
+                ("check-modules-reporttype-names", "marker", "cp1251"),
+                ("check-modules-reporttype-ids", "marker", "cp1251"),
+                ("check-modules-reporttype-brief", "marker", "cp1251"))
+
+# Зеркало `CHECK_LADDER`: те же 22 позиции, изменена только команда (`/CheckConfig`).
+CHECKCMD_LADDER = (("check-config-base", "marker", "cp1251"),
+                   ("check-config-configlog", "marker", "cp1251"),
+                   ("check-config-references", "marker", "cp1251"),
+                   ("check-config-distributive", "marker", "cp1251"),
+                   ("check-config-unreferenced", "marker", "cp1251"),
+                   ("check-config-handlers", "marker", "cp1251"),
+                   ("check-config-emptyhandlers", "marker", "cp1251"),
+                   ("check-config-extended", "marker", "cp1251"),
+                   ("check-config-reportfile", "marker", "cp1251"),
+                   ("check-config-warnings-as-errors", "marker", "cp1251"),
+                   ("check-config-nocheck", "marker", "cp1251"),
+                   ("check-config-nbegin", "marker", "cp1251"),
+                   ("check-config-nend", "marker", "cp1251"),
+                   ("check-config-module-bogus", "marker", "cp1251"),
+                   ("check-config-module", "marker", "cp1251"),
+                   ("check-config-reportformat-bogus", "marker", "cp1251"),
+                   ("check-config-reportformat-mxl", "marker", "cp1251"),
+                   ("check-config-reportformat-txt", "marker", "cp1251"),
+                   ("check-config-reporttype-bogus", "marker", "cp1251"),
+                   ("check-config-reporttype-names", "marker", "cp1251"),
+                   ("check-config-reporttype-ids", "marker", "cp1251"),
+                   ("check-config-reporttype-brief", "marker", "cp1251"))
+
+# Шаги группы проверки, у которых предсказания нет, и почему. Предсказание обязано иметь читаемый
+# источник; корпус БСП подписывает из этой группы только семь флагов (стр. 2953-2969) и команду
+# `/CheckConfig` (стр. 2953). Остальные имена измерены замером 426 имён, но ни один корпус, ни один
+# канон и ни один прогон контура не говорит, что делает `-WarningsAsErrors`, `-noCheck`, `-NBegin`,
+# `-NEnd`, `-Module` и отчётные опции. Предсказывать их исход было бы нечем, поэтому они идут
+# наблюдением без предсказания — и это записано здесь, а не забыто: `CHECK_OBSERVATION_ONLY`
+# проверяется тестом, что непредсказанных шагов ровно столько и это ровно они.
+CHECK_UNCITED_STEPS = ("reportfile", "warnings-as-errors", "nocheck", "nbegin", "nend",
+                       "module", "module-bogus", "reportformat-bogus", "reportformat-mxl",
+                       "reportformat-txt", "reporttype-bogus", "reporttype-names",
+                       "reporttype-ids", "reporttype-brief")
+CHECK_OBSERVATION_ONLY = {f"check-{name}-{step}" for name in ("modules", "config")
+                          for step in CHECK_UNCITED_STEPS}
+
+# Шаги, у которых предсказание есть: базовый шаг (исход замерен прогоном контура) и семь корпусных
+# флагов. Всего 8 на лестницу, 16 на обе — ровно столько записей в `PREDICTIONS` добавляет эта
+# итерация.
+CHECK_PREDICTED_STEPS = {f"check-{name}-{step}" for name in ("modules", "config")
+                         for step in ("base", "configlog", "references", "distributive",
+                                      "unreferenced", "handlers", "emptyhandlers", "extended")}
+
+
+def check_mirror_variant(variant: str) -> str:
+    """Парное имя шага в зеркальной лестнице проверки: `check-modules-X` <-> `check-config-X`.
+
+    Зеркало проверяется по самому замеру (`check_mirror_*` в отчёте): у одноимённых шагов одинаков
+    хвост модификаторов и различается только имя команды, поэтому «имя принято» или «имя отвергнуто»
+    нельзя приписать другой команде проверки. Замена работает в обе стороны: лестница прогоняется
+    по одной из двух цепочек имён, а сравнивать надо с той, которая сейчас не прогоняется.
+    """
+    for left, right in (("check-modules-", "check-config-"), ("check-config-", "check-modules-")):
+        if variant.startswith(left):
+            return right + variant[len(left):]
+    raise KeyError(f"{variant}: не шаг группы проверки, парного имени у него нет")
+
+
+def check_observation_variants() -> tuple:
+    """Все 44 шага группы проверки, обе лестницы целиком: покрытие лестниц сверяется тестом, а не
+    на глаз (у варианта без шага нет ни наблюдения, ни сравнения с зеркалом)."""
+    return tuple(variant for ladder in (CHECK_LADDER, CHECKCMD_LADDER)
+                 for variant, _program, _encoding in ladder)
+
+
+def check_predicted_steps(ladder: tuple) -> list:
+    """Шаги лестницы проверки, у которых есть запись в `PREDICTIONS`: сверяются с источником именно
+    они. Пустой список означал бы, что лестница прогоняется без единого предсказания."""
+    return sorted(variant for variant, _program, _encoding in ladder if variant in PREDICTIONS)
+
+
+def check_unpredicted_steps(ladder: tuple) -> list:
+    """Шаги без предсказания: наблюдение ради наблюдения. Список обязан совпадать с
+    `CHECK_OBSERVATION_ONLY` — тогда «не предсказали» не выглядит как «забыли предсказать»."""
+    return sorted(variant for variant, _program, _encoding in ladder if variant not in PREDICTIONS)
+
 
 # Шаги прежних лестниц, где меняется ровно ДВА токена, и почему это всё ещё одно изменение.
 # Способ входа `-User=<имя>` + `-Pwd=<пароль>` — ОДИН измеренный способ авторизации: в таблице
