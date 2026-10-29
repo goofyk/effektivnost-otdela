@@ -52,8 +52,10 @@ PATHS = json.loads((ROOT / "local.paths.json").read_text(encoding="utf-8-sig"))
 
 # Артефакт гейта, с которым сверяется матрица: независимые числа счётчика раскладки
 # (`layout_source`), числа читателя `p1c.load` (`tool_counts_source`) и молчаливые для инструментов
-# классы (`tool_blind_kinds`).
-GATE_ARTIFACT = "gate-14.json"
+# классы (`tool_blind_kinds`). `gate-15.json` — первый гейт, посчитанный читателем после правок
+# A1 и A2 (в нём `tool_counts_source` 12 классов и `tool_blind_kinds` 10); `gate-14.json` остаётся
+# артефактом того же гейта, посчитанного читателем до этих правок (10 и 12).
+GATE_ARTIFACT = "gate-15.json"
 
 # Прогоны: `label` — ярлык, `argv` — аргументы модуля CLI (ярлыки `cfg`, `dump`, `skd` подставляются
 # из `local.paths.json`), `names_counted` — можно ли в этом прогоне мерить покрытие именем сущности.
