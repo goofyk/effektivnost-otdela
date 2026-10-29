@@ -18,9 +18,9 @@ def counts_from_model(model: dict) -> dict:
 
     Вид должен называться так же, как в независимом счётчике по раскладке файлов
     (`scripts/layout.py`), иначе сравнение двух счётчиков нельзя прочитать без догадок.
-    Общая часть модели (`collections`) даёт только 18 распознаваемых папок выгрузки;
-    общее, формы и пропущенные файлы лежат в других ключах, и без них молчание читателя
-    неотличимо от пустой конфигурации.
+    Общая часть модели (`collections`) даёт только 18 распознаваемых папок выгрузки; общее,
+    формы, пропущенные файлы, права ролей и предопределённые данные лежат в других ключах,
+    и без них молчание читателя неотличимо от пустой конфигурации.
     """
     model = model or {}
     result: dict[str, int] = {}
@@ -33,6 +33,15 @@ def counts_from_model(model: dict) -> dict:
         count = len(value) if isinstance(value, dict) else len(value or [])
         if count:
             result[kind] = result.get(kind, 0) + count
+
+    # Права ролей и предопределённые данные: имена совпадают со счётчиком по файлам
+    # (`scripts/layout.py`), потому что без них прочитанные `Ext/Rights.xml` и
+    # `Ext/Predefined.xml` остались бы в `tool_blind_kinds`. Имя `role` (дескриптор
+    # `Roles/Имя.xml`) не выдаётся: читатель читает файл прав, а не дескриптор роли.
+    if model.get("roles"):
+        result["role_rights"] = result.get("role_rights", 0) + len(model["roles"])
+    if model.get("predefined_data"):
+        result["predefined_data"] = result.get("predefined_data", 0) + len(model["predefined_data"])
 
     forms = sum(len(obj.get("forms", [])) for obj in model.get("objects", {}).values())
     forms += len(model.get("common_forms") or [])

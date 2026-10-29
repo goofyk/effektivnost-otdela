@@ -106,6 +106,26 @@ class CountsTest(unittest.TestCase):
         self.assertEqual(got["form_data"], 2)
         self.assertEqual(got["skipped_module_files"], 1)
 
+    def test_counts_include_role_rights_and_predefined_data(self):
+        """Права ролей и предопределённые данные читатель держит отдельными ключами модели, а
+        независимый счётчик по файлам (`scripts/layout.py`) считает их классами `role_rights` и
+        `predefined_data`. Без этих пар прочитанные файлы остались бы в `tool_blind_kinds`:
+        счётчик читателя не показал бы, что роль и строки каталога он видел.
+
+        Имя `role` (дескриптор `Roles/Имя.xml`) читатель не выдаёт: он читает `Ext/Rights.xml`,
+        а не дескриптор роли, и объявлять дескриптор прочитанным нельзя.
+        """
+        model = {
+            "collections": {"Справочники": {"kind": "catalog", "objects": ["А"]}},
+            "roles": {"ПолныеПрава": {"path": "Roles/ПолныеПрава/Ext/Rights.xml"},
+                      "ТолькоЧтение": {"path": "Roles/ТолькоЧтение/Ext/Rights.xml"}},
+            "predefined_data": {"catalog.А": {"path": "Catalogs/А/Ext/Predefined.xml"}},
+        }
+        got = counts.counts_from_model(model)
+        self.assertEqual(got["role_rights"], 2)
+        self.assertEqual(got["predefined_data"], 1)
+        self.assertNotIn("role", got)
+
     def test_object_counts_refuses_without_reader_path(self):
         """Молчаливый «читателя не нашли» неотличим от конфигурации без объектов."""
         with self.assertRaises(RuntimeError) as caught:
