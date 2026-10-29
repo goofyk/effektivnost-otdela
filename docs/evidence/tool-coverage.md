@@ -13,7 +13,8 @@
 Артефакты замера: `reports/toolcov_<ярлык>.json` (по одному на прогон), `reports/toolcov_runs.json`
 (сводка прогонов и матрица классов), `reports/toolcov_summary.txt` (коды возврата и stderr),
 `reports/tool-coverage-matrix-18.md` (матрица в том виде, в котором её переносит генератор),
-`reports/gate-14.json` (гейт, с которым матрица сверяется). Таблицы и блоки содержимого отчётов в этот
+`reports/gate-15.json` (гейт, с которым матрица сверяется; `reports/gate-14.json` — тот же гейт по тому
+же исходнику, посчитанный читателем до правок A1/A2). Таблицы и блоки содержимого отчётов в этот
 документ переносит `probe/render_query_tables.py` дословно из этих артефактов; он же их пересчитывает
 при `--check`.
 
@@ -205,13 +206,13 @@ p1c-load object <вид>.<имя> [корень]`) и `forms-form-wrong-order` (
 
 ```text
 kinds_total 22
-gate_artifact `gate-14.json`
+gate_artifact `gate-15.json`
 tools 8: `bsl`, `cf`, `diff`, `forms`, `graph`, `load`, `metrics`, `sdbl`
 layout_counts_match: want 22 classes, got 22 classes, mismatch 0 (пусто)
-gate_tool_counts_source 10 classes: accumulation_register 1, catalog 1, common_module 1, constant 1, data_processor 1, document 1, enum 1, form_data 2, information_register 1, report 1
-gate_tool_blind_kinds 12: `bsl_module`, `files`, `form_descriptor`, `form_module`, `language`, `object_module`, `predefined_data`, `report_template`, `report_template_data`, `role`, `role_rights`, `subsystem`
-reader_vs_gate.load-model-cfg: equal_to_gate_tool_counts_source false, diff_reader_vs_gate 2
-reader_vs_gate.load-model-dump: equal_to_gate_tool_counts_source false, diff_reader_vs_gate 2
+gate_tool_counts_source 12 classes: accumulation_register 1, catalog 1, common_module 1, constant 1, data_processor 1, document 1, enum 1, form_data 2, information_register 1, predefined_data 1, report 1, role_rights 2
+gate_tool_blind_kinds 10: `bsl_module`, `files`, `form_descriptor`, `form_module`, `language`, `object_module`, `report_template`, `report_template_data`, `role`, `subsystem`
+reader_vs_gate.load-model-cfg: equal_to_gate_tool_counts_source true, diff_reader_vs_gate 0 (пусто)
+reader_vs_gate.load-model-dump: equal_to_gate_tool_counts_source true, diff_reader_vs_gate 0 (пусто)
 kinds seen by path 7: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`, `predefined_data`, `role_rights`
 kinds seen by name only 12: `accumulation_register`, `catalog`, `common_module`, `constant`, `data_processor`, `document`, `enum`, `form_descriptor`, `information_register`, `report`, `role`, `subsystem`
 kinds seen by no tool 3: `language`, `report_template`, `report_template_data`
@@ -222,21 +223,22 @@ runs logging the context line 11 of 18
 ```
 
 Артефакты: `reports/toolcov_runs.json` (`layout_counts_match`, `gate_*`, `reader_vs_gate`,
-`kinds_seen_by_*`), `reports/gate-14.json`.
+`kinds_seen_by_*`), `reports/gate-15.json`.
 
 Сверка состава классов сходится: 22 класса замера против независимого счётчика гейта (`layout_counts`)
-— расхождений ноль. Сверка читателя с гейтом разошлась, и разошлась там, где её ждали: `gate-14.json`
-посчитан читателем **до** правок A1/A2, его `tool_counts_source` — 10 классов; живой читатель выдаёт
-12 классов. Различие ровно в двух ключах: `predefined_data [1, 0]` и `role_rights [2, 0]` (первое
-число — у читателя, второе — у гейта). Остальные 10 классов совпадают и по составу, и по количествам,
-в том числе `form_data 2`. Значит, расход — не ошибка замера, а отставание артефакта гейта: чтобы
-`tool_counts_source` и `tool_blind_kinds` считались живым читателем, нужен новый прогон гейта
-(`gate-15`).
+— расхождений ноль. Сошлась и сверка читателя с гейтом: `gate-15.json` (шаги `load` 6.0 с, `check`
+2.0 с, `dump` 2.0 с, код возврата 0) посчитан читателем после правок A1/A2 и даёт 12 классов —
+столько же, сколько живой читатель, поэтому `diff_reader_vs_gate` пуст в обоих модельных прогонов.
+Запись прежней сверки сохраняется как запись замеренного прогона: против `gate-14.json` — того же
+гейта по тому же исходнику, но посчитанного читателем **до** правок A1/A2, —
+`equal_to_gate_tool_counts_source` было `false`, а `diff_reader_vs_gate` давало ровно две пары:
+`predefined_data [1, 0]` и `role_rights [2, 0]` (первое число — у читателя, второе — у гейта),
+остальные 10 классов совпадали и по составу, и по количествам, в том числе `form_data 2`.
 
-Слепые классы по гейту — 12 (`tool_blind_kinds`): это ровно 22 минус те 10, которые назвал старый
-читатель. По живым числам из них закрыты четыре: `predefined_data` и `role_rights` — путём файла
-инструментом `load`, `role` и `subsystem` — именем сущности тем же инструментом. Остаются десять, и
-это и есть ожидаемое `tool_blind_kinds` после A1/A2. Из этих десяти семь закрыты другими инструментами
+Слепые классы по гейту — 10 (`tool_blind_kinds` в `gate-15.json`): это ровно 22 минус те 12, которые
+назвал читатель после A1/A2. Из прежних двенадцати (10 классов `tool_counts_source` в `gate-14.json`)
+закрыты четыре: `predefined_data` и `role_rights` — путём файла инструментом `load`, `role` и
+`subsystem` — именем сущности тем же инструментом. Из этих десяти семь закрыты другими инструментами
 матрицы, но не читателем: `bsl_module` (8 файлов), `files` (31) и `object_module` (6) — только по пути
 файла; `form_module` (2) — и по пути, и по имени; `form_descriptor` (2) — только по имени; плюс
 `role` и `subsystem`, которые читатель теперь называет именем. Ни по пути, ни по имени не закрыты три
@@ -245,10 +247,11 @@ runs logging the context line 11 of 18
 сущности нет (`cfg_names_by_kind` содержит 17 ключей — ровно без `bsl_module`, `files`,
 `object_module`, `predefined_data`, `role_rights`).
 
-Права ролей при этом настроены и проверены независимо: гейт `reports/gate-14.json` даёт
+Права ролей при этом настроены и проверены независимо: гейт `reports/gate-15.json` даёт
 `rights.code 0` (`rights_files 2`, `object_blocks 17`, `rights 79`) и `rights_immobility.code 0`
 (`source_blocks 17`, `dump_blocks 17`, `source_rights 79`, `dump_rights 79`, ничего не потеряно и
-ничего не добавлено). После правок A1/A2 читатель `p1c.load` называет оба файла прав — `role_rights`
+ничего не добавлено) — ровно те же числа, что и `gate-14.json`, потому что исходник между этими
+двумя прогонами не менялся. После правок A1/A2 читатель `p1c.load` называет оба файла прав — `role_rights`
 закрыт путём (1 инструмент) и даёт ровно те же числа, что и гейт: 2 роли, 17 блоков прав, 79 прав
 (`Roles/АдминистраторСистемы/Ext/Rights.xml` — 9 блоков и 57 прав,
 `Roles/СотрудникОтдела/Ext/Rights.xml` — 8 блоков и 22 права), и одну запись предопределённых данных
@@ -851,8 +854,9 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
    (`--kind zzz-netakogo-vida`) даёт ровно то же, что отсутствующий флаг: `exit 0`, базовая страница и 26
    имён при пустом `stderr`.
 5. **Модель `p1c.load` не представляет часть конфигурации**, поэтому её «полнота» не равна полноте
-   раскладки: 12 классов из 22 по счётчику читателя (`reader_kind_counts`), при 10 классах в счётчике
-   гейта `gate-14.json`.
+   раскладки: 12 классов из 22 по счётчику читателя (`reader_kind_counts`) и те же 12 в счётчике
+   гейта `gate-15.json`; прежний прогон того же гейта (`gate-14.json`) считался читателем до правок
+   A1/A2 и давал 10 классов.
 6. **Код возврата не сообщает, что было прочитано**: `check.sdbl` и `check.forms` дают 0 с пустым
    `results` при непустом `stats`, `cf` отвечает код 2 о неверном аргументе без отчёта, два прогона
    дают 2 без отчёта.
@@ -967,12 +971,25 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
 | `role_rights` по пути файла | 0 инструментов | 1 (`load`) |
 | `role` и `subsystem` по имени сущности | 0 и 0 | 1 и 1 (оба — `load`) |
 | счётчик читателя (`reader_kind_counts`) | 10 классов | 12 классов |
-| `reader_vs_gate` у обоих прогонов модели | совпадение с гейтом, различий 0 | различий 2: `predefined_data [1, 0]`, `role_rights [2, 0]` |
+| `reader_vs_gate` у обоих прогонов модели | совпадение с гейтом, различий 0 | против `gate-15.json` — различий 0; против прежнего артефакта `gate-14.json` было различий 2: `predefined_data [1, 0]`, `role_rights [2, 0]` |
 
-Различия в двух последних строках — не расхождение замера, а отставание артефакта: `gate-14.json`
-посчитан тем же читателем до правок A1/A2. Чтобы `tool_counts_source` и `tool_blind_kinds` считались
-живым читателем, нужен новый прогон гейта (`gate-15`); он не запускался в этой итерации, потому что
-требует полного обхода корпусов вне окон 1С-замеров.
+Различие в строке `reader_vs_gate` было отставанием артефакта, а не расхождением замера:
+`gate-14.json` посчитан тем же читателем до правок A1/A2. Это проверено прогоном `gate-15.json`
+(итерация 12: шаги `load` 6.0 с, `check` 2.0 с, `dump` 2.0 с, код возврата 0, тот же `cfg` — 31 файл
+без изменений с прогона `gate-14`). В нём `tool_counts_source` 12 классов и `tool_blind_kinds` 10, и
+сверка читателя с гейтом даёт пустой `diff_reader_vs_gate` в обоих модельных прогонов. Обхода корпусов
+для этого не требовалось: `scripts/gate.py:366-371` считает эти две величины по одному исходнику
+`cfg` (через `scripts/counts.py:object_counts`), корпуса в расчёте не участвуют; цена — один цикл
+платформы (`load`, `check`, `dump`), и он выполнен на гейт-ИБ.
+
+Статус к итерации 12 (прогон `gate-15.json`). Состав закрытого в пункте 1 не изменился: три класса
+(`language`, `report_template`, `report_template_data`) по-прежнему не закрыты ни по пути, ни по имени;
+`role` закрыт именем сущности, но не путём файла — дескриптор `Roles/<Имя>.xml` читателем не читается.
+Изменилось то, что числам гейта теперь можно верить как живым: `tool_counts_source` 12 классов,
+`tool_blind_kinds` 10. Матрица после смены артефакта (`probe/tool_coverage.py:56 GATE_ARTIFACT`)
+переснята теми же 18 прогонами восьми инструментов без запуска платформы и даёт те же 7 / 12 / 3 из
+22 классов; изменились ровно семь строк блока §5 — ярлык артефакта, `gate_tool_counts_source`,
+`gate_tool_blind_kinds` и обе строки `reader_vs_gate`.
 
 ## 12. Честная граница меры
 
@@ -993,10 +1010,11 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
   читатель назвал (`reader_kind_counts`), у него 12. Сводка, которую печатает консоль замера, — суммы
   хитов по классам (`probe/tool_coverage.py:518-519`), и это третья величина.
 - Матрица §2, §3, §4 и §5 переснята после правок A1/A2 читателя `p1c.load` и соответствует нынешним
-  артефактам `reports/toolcov_*.json`. Прежние числа (4 файла и 11 имён у модельных прогонов,
-  5 / 10 / 7 классов по трём категориям, код 1 и traceback у `cf-info-cfg-dir`) сохранены только как
-  запись прежнего замера: в таблице статуса §11 и в блоке «до правки» §8. Артефакт гейта
-  `reports/gate-14.json` при этом не пересоздавался: он по-прежнему описывает читателя до правок.
+  артефактам `reports/toolcov_*.json` и `reports/gate-15.json`. Прежние числа (4 файла и 11 имён у
+  модельных прогонов, 5 / 10 / 7 классов по трём категориям, код 1 и traceback у `cf-info-cfg-dir`,
+  `reader_vs_gate` с двумя различиями) сохранены только как запись прежнего замера: в таблице статуса
+  §11 и в блоке «до правки» §8. Артефакт `reports/gate-14.json` при этом не перезаписывался: он на
+  диске остаётся записью того же гейта, посчитанного читателем до правок A1/A2.
 - `context_signature` и `context_effective` из отчётов в таблицы и блоки содержимого не переносится
   (`probe/render_query_tables.py::SKIP_REPORT_KEYS`), чтобы абсолютные пути не попадали в документ;
   числа подписей в §5 приведены по первым 16 шестнадцатеричным разрядам значений из артефактов.

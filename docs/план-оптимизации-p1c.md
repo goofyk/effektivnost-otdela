@@ -24,23 +24,25 @@
 | A2 | Читать предопределенные данные (`Ext/Predefined.xml`) как список строк с uuid и представлением | `load/reader.py` (сейчас не читает `Templates`, предопределенные данные, `CommonPictures`, `SettingsStorages`, `SessionParameters`, `Roles`, `SubSystems`, `Languages`) | `layout_source.predefined_data 1`; expect 1 файл и его строки |
 | A3 | Читать `Languages/Русский.xml`, `SubSystems/*.xml`, `CommonPictures`, `SettingsStorages`, `SessionParameters` | тот же reader | `gate-14.json` → `layout_source`: `language 1`, `subsystem 1`; в `cfg` их сейчас нет для `CommonPictures`/`SettingsStorages`/`SessionParameters` — добавить их в конфигурацию (итерация 9), чтобы мерить |
 | A4 | `Templates` и их содержимое: отдельно класс шаблона и отдельно текст SKD | `load/reader.py` + `check/sdbl/cli.py:145-154` | `report_template 1`, `report_template_data 1`; `sdbl query` уже даёт `queries 1` |
-| A5 | Называть класс прочитанного файла в отчёте (сейчас 5 классов видны только путём: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`) | `load/reader.py` (поле `kind` у записи модели) | матрица: `kinds_seen_by_path` 5 → цель 22 |
+| A5 | Называть класс прочитанного файла в отчёте (на замеренном прогоне 5 классов видны только путём: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`; после A1/A2 их 7 — добавились `predefined_data` и `role_rights`) | `load/reader.py` (поле `kind` у записи модели) | матрица: `kinds_seen_by_path` 5 → 7, цель 22 |
 | A6 | Отдельная подкоманда `load config` (или поля в `load model`) для модулей уровня конфигурации: `Ext/SessionModule.bsl`, `Ext/ManagedApplicationModule.bsl`, `Ext/OrdinaryApplicationModule.bsl`, `Ext/ExternalConnectionModule.bsl`, `Ext/CommandInterface.xml`, `Ext/HomePageWorkArea.xml` | `load/cli.py`, `load/reader.py` | итерация 9 добавляет эти файлы в cfg; после этого прогон обязан дать по одному хиту на файл |
 
 **Метрика блока:** `tool_blind_kinds` 12 → 0; `kinds_seen_by_no_tool` 7 → 0.
 
-Статус блока A к итерации 11: A1 и A2 закрыты в `p1c` — читатель прав ролей и предопределённых данных
+Статус блока A к итерации 12. A1 и A2 закрыты в `p1c` — читатель прав ролей и предопределённых данных
 в `load/reader.py` и ключи `roles` и `predefined_data` в модели метаданных. На нашей cfg читатель даёт
-2 роли (17 блоков прав и 79 прав — ровно столько же, сколько `rights_immobility` в `gate-14.json`) и
-1 запись предопределённых данных `catalog.Сотрудники` с 6 строками (uuid, код с ведущими нулями,
-представление, признак группы). Матрица покрытия переснята (`docs/evidence/tool-coverage.md`, §2–§5):
-`kinds_seen_by_path` 5 → 7, `kinds_seen_by_name_only` 10 → 12, `kinds_seen_by_no_tool` 7 → 3
-(`language`, `report_template`, `report_template_data`). По счётчику живого читателя в
-`tool_blind_kinds` осталось бы 10 классов (22 минус 12 названных), но артефакт `gate-14.json` посчитан
-читателем до правок и не пересоздавался: чтобы 10 стало числом гейта, нужен прогон `gate-15` (полный
-обход корпусов, вне окон 1С-замеров). A3–A6 открыты: `subsystems`, `languages`, `session_parameters`,
-`templates` и модули уровня конфигурации в модель не добавлены; дескрипторы `Roles/<Имя>.xml` никто не
-открывает — класс `role` закрыт именем роли, но не путём файла.
+2 роли (17 блоков прав и 79 прав — ровно столько же, сколько `rights_immobility` в `gate-14.json` и
+`gate-15.json`) и 1 запись предопределённых данных `catalog.Сотрудники` с 6 строками (uuid, код с
+ведущими нулями, представление, признак группы). Матрица покрытия переснята
+(`docs/evidence/tool-coverage.md`, §2–§5): `kinds_seen_by_path` 5 → 7, `kinds_seen_by_name_only`
+10 → 12, `kinds_seen_by_no_tool` 7 → 3 (`language`, `report_template`, `report_template_data`).
+Метрика гейта закрыта прогоном `gate-15.json` (итерация 12, один цикл платформы `load` 6.0 с /
+`check` 2.0 с / `dump` 2.0 с, код возврата 0, тот же `cfg`): `tool_counts_source` 10 → 12 классов,
+`tool_blind_kinds` 12 → 10, `diff_reader_vs_gate` пуст в обоих модельных прогонов. A3–A6 открыты:
+`subsystems`, `languages`, `session_parameters`, `templates` и модули уровня конфигурации в модель не
+добавлены; дескрипторы `Roles/<Имя>.xml` никто не открывает — класс `role` закрыт именем роли, но не
+путём файла. Из 10 слепых классов гейта `gate-15.json` три (`language`, `report_template`,
+`report_template_data`) не закрыты ни путём, ни именем.
 
 ## Блок B. Разломанные места: команды, которые падают или врут
 
@@ -109,7 +111,7 @@
 | --- | --- | --- |
 | F1 | Добавить `--format` и `--out` всем подкомандам `cf` (`info`, `cat`) | `cli-vocabulary-22.json`: у `cf` из общих флагов только `--context` |
 | F2 | Словарь подкоманд и флагов CLI держать замером `--help`, а не догадкой, и обновлять после каждого релиза p1c | `probe/cli_vocabulary.py` → `cli-vocabulary-22.json` (8 инструментов: `cf`, `check.bsl`, `check.forms`, `check.sdbl`, `diff`, `graph`, `load`, `metrics`), `p1c/src/p1c/data/test_cli_flags.json` (426 имён флагов) |
-| F3 | Отчёт обязан содержать перечень прочитанных файлов с классом | матрица: 10 классов подтверждаются только именем, путь не показан (`toolcov_runs.json`) |
+| F3 | Отчёт обязан содержать перечень прочитанных файлов с классом | матрица: 10 классов подтверждаются только именем, путь не показан (`toolcov_runs.json`; после A1/A2 таких классов 12) |
 | F4 | Отдельный код/статус при `schema_available false` и при `stats.files == 0` | `toolcov_runs.json` → `shape.schema_available null` во всех reader-отчётах |
 | F5 | `_diagnose` и пропуски полей показывать в отчёте, а не молчать | `toolcov_sdbl-check-cfg.json` → `skip_field_fields_unknown 3`, `skip_vt_no_help_fields 1` |
 | F6 | Регистронезависимость написаний закрыта замером 26: в `p1c` держать одно измеренное написание (`-listFile`, `/CheckConfig`, `/CheckModules`) и не делать из другого написания отдельный флаг; тестом «регистронезависимость» не покрывать — наблюдаемого различия нет | `reports/flags-26-caseload.json` (`case-listfile-lower` = `-listfile` и `case-format-lower` = `-format`: код 0, 3 байта — побайтово как у близнецов `load-listfile-ok` и `load-format-flag`), `reports/flags-26-casecheck.json` (8 двойников имён группы проверки), раздел 12 `docs/evidence/exec-modes-and-negatives.md`; исправленное прочтение прошлых кодов: `effect-16-loadopts-full.json` (`listfile-onefile` — 90 байт «Ошибка чтения файла-списка загружаемых файлов», `listfile-ok` — 337 байт отказа частичной загрузки) |
@@ -122,10 +124,10 @@
 
 | мера | сейчас | цель |
 | --- | --- | --- |
-| `tool_blind_kinds` (гейт) | 12 | 0 |
-| `kinds_seen_by_no_tool` (матрица) | 7 | 0 |
-| `kinds_seen_by_path` | 5 | 22 |
-| `kinds_seen_by_name_only` | 10 | 0 (каждое имя подтверждается и путём) |
+| `tool_blind_kinds` (гейт) | 10 (`gate-15.json`; в `gate-14.json` было 12) | 0 |
+| `kinds_seen_by_no_tool` (матрица) | 3 (было 7) | 0 |
+| `kinds_seen_by_path` | 7 (было 5) | 22 |
+| `kinds_seen_by_name_only` | 12 (было 10) | 0 (каждое имя подтверждается и путём) |
 | находки `check.bsl` на рукописной конфигурации | 15, из них 14 шум | 1 истинный дефект либо 0 при исправленном каноне |
 | `types_without_ctor` / `types_without_properties` | 1869 / 1885 | заметно меньше 1869; хотя бы 30 типов с подтверждёнными арностями конструктора |
 | `check.forms form` (`kind`, `owner`) | пусто | заполнены |
