@@ -42,6 +42,16 @@
     остальные 28 записаны как наблюдение без предсказания (`CHECK_OBSERVATION_ONLY`): ни один
     корпус эти имена в командной строке не употребляет. Исход «нашёл ли прогон дефект» меряется
     строками отчёта (`object_lines`), а не кодом возврата.
+10. Лестницы регистровых двойников (замер 26: `--casecheck` на `CASECHECK_LADDER`, `--caseload` на
+    `CASELOAD_LADDER`): шаг меняет РОВНО ОДНО написание уже измеренного шага — имя команды
+    (`/CheckModules` -> `/checkmodules`) или имя модификатора в хвосте (`-HandlersExistence` ->
+    `-handlersexistence`). Близнец стоит соседом у своего двойника, после двойника лестница
+    возвращается к близнецу (сброс измеряется в том же прогоне), два двойника не соседствуют.
+    Двойник отличается от близнеца только регистром (`case_twin_signature_diff`); строчное или
+    верхнее написание отсутствует в замере 426 имён, а измеренное написание близнеца — единственное
+    с таким `lower()`. Предсказаний у этих шагов нет, и причина записана в
+    `CASE_OBSERVATION_REASONS`: канон корпуса пишет только измеренное написание, а предсказывать по
+    исходу близнеца значило бы предсказывать по самому замеру.
 """
 from __future__ import annotations
 
@@ -75,6 +85,55 @@ def argv(variant: str, loadlist: str = "work/exec_loadlist.txt") -> list:
     out = pathlib.Path("work/exec_out.txt")
     return exec_probe.variant_argv(variant, BIN, IB, SCRIPT, out, pathlib.Path("marker.txt"),
                                    CFG, pathlib.Path("work"), loadlist)
+
+
+def synthetic_result(variant: str) -> dict:
+    """Синтетический результат прогона той же формы, что возвращает `run`: тест лестницы не должен
+    запускать платформу, но обязан пройти весь путь `main` до ключей наблюдения."""
+    return {"variant": variant, "argv": ["1cv8.exe"], "code": 0, "timed_out": False,
+            "seconds": 2.0, "bytes": 33, "lines": ["Синтаксических ошибок не обнаружено!"],
+            "stdout_bytes": 40, "stderr_bytes": 0,
+            "console_lines": ["Синтаксических ошибок не обнаружено!"],
+            "marker_exists": False, "marker_text": "", "script_encoding": "cp1251",
+            "script_encoding_bytes": 0, "script_written": False, "script_bytes": 0,
+            "script_path": "work/exec_program.txt", "program_kind": "marker",
+            "report": {"report_asked": True,
+                       "report_path": str(exec_probe.report_file_for(pathlib.Path("work"))),
+                       "report_exists": True, "report_bytes": 73, "report_lines": [],
+                       "report_line_count": 0, "report_siblings": []}}
+
+
+def check_local_without_cfg(raw: pathlib.Path) -> str:
+    """Копия `local.paths.json` без ключа `cfg`: корпусные ключи остаются, чтобы источник
+    предсказания читался. Нет реального файла путей — копировать нечего (skip)."""
+    source = ROOT / "local.paths.json"
+    if not source.is_file():
+        raise unittest.SkipTest("нет local.paths.json: без путей источника предсказания нет")
+    data = json.loads(source.read_text(encoding="utf-8-sig"))
+    for key in ("cfg", "ib", "bin", "work"):
+        data.pop(key, None)
+    path = raw / "local-nocfg.json"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return str(path)
+
+
+def silent_main(command: list) -> int:
+    """`main` печатает по строке наблюдения на каждый шаг лестницы: в тесте этот вывод только
+    шумит, проверяют код возврата и вызовы `run`, оставшиеся за ним."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        return exec_probe.main(command)
+
+
+def synthetic_cfg(raw: pathlib.Path) -> str:
+    """Каталог конфигурации для синтетического прогона: `main` пишет файл списка загрузки из
+    реального каталога (`write_loadlist`), а платформа при этом не запускается. Состав файлов тот
+    же, что у `TestLoadListFile`: корневые XML-файлы без `Ext/`."""
+    cfg = raw / "cfg"
+    for name in ("Configuration.xml", "Catalogs/Сотрудники.xml"):
+        file = cfg / name
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("x", encoding="utf-8")
+    return str(cfg)
 
 
 class TestArgvShape(unittest.TestCase):
@@ -154,25 +213,43 @@ class TestArgvShape(unittest.TestCase):
         self.assertEqual(swapped, execute)
 
 
+FLAG_MEASUREMENT_PATH = ROOT.parent / "p1c" / "src" / "p1c" / "data" / "test_cli_flags.json"
+
+
+def measured_flag_names() -> set:
+    """Имена из замера имён платформы (`p1c/src/p1c/data/test_cli_flags.json`, 426 имён).
+
+    Замер читают две разные проверки — «флаг варианта измерен» и «регистровый двойник отличается
+    от измеренного написания только регистром». Источник у них один: иначе вторая проверка могла
+    бы сверяться с копией, а не с замером.
+    """
+    if not FLAG_MEASUREMENT_PATH.is_file():
+        raise unittest.SkipTest(f"нет замера имён платформы: {FLAG_MEASUREMENT_PATH.as_posix()}")
+    data = json.loads(FLAG_MEASUREMENT_PATH.read_text(encoding="utf-8"))
+    measured = set()
+    for entry in data["files"]:
+        # `names` — полный список имён вида `/Имя`, `-Имя` и `CmdLine/Имя`; остальные поля
+        # записи (`distinct`, `flag_like`, `keys`) — счётчики, а не списки.
+        measured.update(entry["names"])
+    return measured
+
+
 class TestFlagsAreMeasured(unittest.TestCase):
     """Ни одного имени, которого нет в замере имён платформы."""
 
     @classmethod
     def setUpClass(cls):
-        flags_path = ROOT.parent / "p1c" / "src" / "p1c" / "data" / "test_cli_flags.json"
-        if not flags_path.is_file():
-            raise unittest.SkipTest(f"нет замера имён платформы: {flags_path.as_posix()}")
-        data = json.loads(flags_path.read_text(encoding="utf-8"))
-        measured = set()
-        for entry in data["files"]:
-            # `names` — полный список имён вида `/Имя`, `-Имя` и `CmdLine/Имя`; остальные поля
-            # записи (`distinct`, `flag_like`, `keys`) — счётчики, а не списки.
-            measured.update(entry["names"])
+        measured = measured_flag_names()
         cls.measured = measured
         cls.keys = {name for name in measured if name.startswith("CmdLine/")}
 
     def test_variant_flags_are_measured(self):
         for variant in exec_probe.VARIANTS:
+            if variant in exec_probe.CASE_VARIANTS:
+                # Шаг-двойник носит написание, которого в замере нет намеренно: измерено
+                # написание его близнеца (`/checkmodules` против измеренного `/CheckModules`).
+                # Регистровые имена проверяет `TestCaseLadders`.
+                continue
             for item in argv(variant):
                 if isinstance(item, str) and (item.startswith("/") or item.startswith("-")):
                     name = item.split("=", 1)[0]
@@ -429,14 +506,16 @@ class TestCommandLadders(unittest.TestCase):
 
 
 class TestModifierLadders(unittest.TestCase):
-    """Лестницы Task 16 (`--predefined`, `--extensions`, `--loadopts`, `--update`, `--modes`).
-    Отвечают за то, что шаг приписывается ровно одному изменённому токену команды."""
+    """Лестницы Task 16 (`--predefined`, `--extensions`, `--loadopts`, `--update`, `--modes`) и
+    лестница регистровых двойников группы загрузки (`--caseload`). Отвечают за то, что шаг
+    приписывается ровно одному изменённому токену команды."""
 
     LADDERS = (("PREDEFINED_LADDER", exec_probe.PREDEFINED_LADDER),
                ("EXTENSION_LADDER", exec_probe.EXTENSION_LADDER),
                ("LOADOPTS_LADDER", exec_probe.LOADOPTS_LADDER),
                ("UPDATE_LADDER", exec_probe.UPDATE_LADDER),
-               ("MODE_LADDER", exec_probe.MODE_LADDER))
+               ("MODE_LADDER", exec_probe.MODE_LADDER),
+               ("CASELOAD_LADDER", exec_probe.CASELOAD_LADDER))
 
     def test_every_ladder_starts_from_the_reference_with_a_known_outcome(self):
         """Эталонный шаг — `load-ok`: его код 0 подтверждён прогонами гейта, поэтому дальше
@@ -476,6 +555,7 @@ class TestModifierLadders(unittest.TestCase):
         all_ladders = (exec_probe.SWEEP, exec_probe.PROGRAM_LADDER, exec_probe.CONTROLS,
                        exec_probe.NEGATIVE_LADDER, exec_probe.AUTH_LADDER, exec_probe.TEST_LADDER,
                        exec_probe.CHECK_LADDER, exec_probe.CHECKCMD_LADDER,
+                       exec_probe.CASECHECK_LADDER,
                        *(ladder for _name, ladder in self.LADDERS))
         used = set()
         for ladder in all_ladders:
@@ -514,7 +594,8 @@ class TestModifierLadders(unittest.TestCase):
     def test_each_ladder_is_named_by_its_own_option(self):
         """Наблюдение вызывают опцией, а не «как-нибудь»: иначе лестницу нельзя повторить."""
         text = (ROOT / "scripts" / "exec_probe.py").read_text(encoding="utf-8")
-        for option in ("--predefined", "--extensions", "--loadopts", "--update", "--modes"):
+        for option in ("--predefined", "--extensions", "--loadopts", "--update", "--modes",
+                       "--caseload"):
             self.assertIn(f'"{option}"', text, option)
 
     def test_ladder_ok_answers_for_the_discipline_only(self):
@@ -1013,41 +1094,6 @@ class TestCheckLadder(unittest.TestCase):
         self.assertEqual(refused["object_line_count"], 0,
                          "служебная строка не должна читаться как дефект объекта")
 
-    def synthetic_result(self, variant: str) -> dict:
-        """Синтетический результат прогона той же формы, что возвращает `run`: тест лестницы не
-        должен запускать платформу, но обязан пройти весь путь `main` до ключей наблюдения."""
-        return {"variant": variant, "argv": ["1cv8.exe"], "code": 0, "timed_out": False,
-                "seconds": 2.0, "bytes": 33, "lines": ["Синтаксических ошибок не обнаружено!"],
-                "stdout_bytes": 40, "stderr_bytes": 0,
-                "console_lines": ["Синтаксических ошибок не обнаружено!"],
-                "marker_exists": False, "marker_text": "", "script_encoding": "cp1251",
-                "script_encoding_bytes": 0, "script_written": False, "script_bytes": 0,
-                "script_path": "work/exec_program.txt", "program_kind": "marker",
-                "report": {"report_asked": True,
-                           "report_path": str(exec_probe.report_file_for(pathlib.Path("work"))),
-                           "report_exists": True, "report_bytes": 73, "report_lines": [],
-                           "report_line_count": 0, "report_siblings": []}}
-
-    def check_local_without_cfg(self, raw: pathlib.Path) -> str:
-        """Копия `local.paths.json` без ключа `cfg`: корпусные ключи остаются, чтобы источник
-        предсказания читался. Нет реального файла путей — тест нечего копировать (skip)."""
-        source = ROOT / "local.paths.json"
-        if not source.is_file():
-            self.skipTest("нет local.paths.json: без путей источника предсказания нет")
-        data = json.loads(source.read_text(encoding="utf-8-sig"))
-        for key in ("cfg", "ib", "bin", "work"):
-            data.pop(key, None)
-        path = raw / "local-nocfg.json"
-        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        return str(path)
-
-    @staticmethod
-    def silent_main(argv: list) -> int:
-        """`main` печатает по строке наблюдения на каждый из 22 шагов лестницы: в тесте этот вывод
-        только шумит, проверяют код возврата и вызовы `run`, оставшиеся за ним."""
-        with contextlib.redirect_stdout(io.StringIO()):
-            return exec_probe.main(argv)
-
     def test_check_ladders_need_neither_cfg_nor_allow_mutating(self):
         """Группа проверки читает конфигурацию, но не меняет её и не строит команду загрузки:
         `main` прогоняет обе лестницы без `--cfg` и без `--allow-mutating` (код 0 при читаемом
@@ -1058,17 +1104,17 @@ class TestCheckLadder(unittest.TestCase):
         def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
                  program_kind="marker", write_script=True, cfg="", loadlist=""):
             calls.append((variant, cfg, loadlist, write_script, program_kind))
-            return self.synthetic_result(variant)
+            return synthetic_result(variant)
 
         original = exec_probe.run
         exec_probe.run = stub
         try:
             with tempfile.TemporaryDirectory() as raw:
-                local = self.check_local_without_cfg(pathlib.Path(raw))
+                local = check_local_without_cfg(pathlib.Path(raw))
                 for option, ladder in (("--checkkeys", exec_probe.CHECK_LADDER),
                                        ("--checkconfig", exec_probe.CHECKCMD_LADDER)):
                     calls.clear()
-                    code = self.silent_main(["--local", local,
+                    code = silent_main(["--local", local,
                                              "--work", str(pathlib.Path(raw) / "work"),
                                              "--bin", BIN, "--ib", IB, option])
                     expected = [variant for variant, _p, _e in ladder]
@@ -1090,7 +1136,7 @@ class TestCheckLadder(unittest.TestCase):
         def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
                  program_kind="marker", write_script=True, cfg="", loadlist=""):
             calls.append(variant)
-            return self.synthetic_result(variant)
+            return synthetic_result(variant)
 
         original = exec_probe.run
         exec_probe.run = stub
@@ -1098,7 +1144,7 @@ class TestCheckLadder(unittest.TestCase):
             for option in ("--checkkeys", "--checkconfig"):
                 calls.clear()
                 with tempfile.TemporaryDirectory() as raw:
-                    code = self.silent_main(["--local", str(missing),
+                    code = silent_main(["--local", str(missing),
                                              "--work", str(pathlib.Path(raw) / "work"),
                                              "--bin", BIN, "--ib", IB, option])
                 self.assertEqual(code, 1, option)
@@ -1116,7 +1162,7 @@ class TestCheckLadder(unittest.TestCase):
         def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
                  program_kind="marker", write_script=True, cfg="", loadlist=""):
             calls.append(variant)
-            result = self.synthetic_result(variant)
+            result = synthetic_result(variant)
             tail = exec_probe.variant_signature(variant)["tail"]
             if variant.endswith("-module-bogus"):
                 result["code"], result["lines"] = 1, ["Пользователь ИБ не идентифицирован"]
@@ -1133,9 +1179,9 @@ class TestCheckLadder(unittest.TestCase):
                                    ("--checkconfig", exec_probe.CHECKCMD_LADDER)):
                 calls.clear()
                 with tempfile.TemporaryDirectory() as raw:
-                    local = self.check_local_without_cfg(pathlib.Path(raw))
+                    local = check_local_without_cfg(pathlib.Path(raw))
                     json_path = pathlib.Path(raw) / "check.json"
-                    code = self.silent_main(["--local", local,
+                    code = silent_main(["--local", local,
                                              "--work", str(pathlib.Path(raw) / "work"),
                                              "--bin", BIN, "--ib", IB, option,
                                              "--json", str(json_path)])
@@ -1161,12 +1207,256 @@ class TestCheckLadder(unittest.TestCase):
             exec_probe.run = original
 
 
+class TestCaseLadders(unittest.TestCase):
+    """Регистровые двойники (замер 26): шаг меняет РОВНО ОДНО написание уже измеренного шага,
+    близнец стоит соседом и после двойника лестница к нему возвращается, предсказаний у двойников
+    нет (причина записана), а написания двойников отсутствуют в замере 426 имён платформы."""
+
+    CASECHECK_TWINS = ("case-modules-lower", "case-modules-upper", "case-config-lower",
+                       "case-config-upper", "case-config-handlers-lower",
+                       "case-config-handlers-upper", "case-config-extended-lower",
+                       "case-config-extended-upper")
+    CASELOAD_TWINS = ("case-load-cmd-lower", "case-listfile-lower", "case-format-lower")
+    LADDERS = (("CASECHECK_LADDER", exec_probe.CASECHECK_LADDER),
+               ("CASELOAD_LADDER", exec_probe.CASELOAD_LADDER))
+
+    def run_ladder(self, option: str, ladder: tuple, codes: dict | None = None) -> tuple:
+        """Прогон лестницы на подменённой `run`: платформу не запускаем, но проходим весь путь
+        `main` — от гейтов (`--cfg`, `--allow-mutating`) до ключей `case_*` и кода возврата."""
+        calls = []
+
+        def stub(bin_path, ib, program, variant, work, timeout=120, encoding="utf-8",
+                 program_kind="marker", write_script=True, cfg="", loadlist=""):
+            calls.append({"variant": variant, "cfg": cfg, "loadlist": loadlist})
+            result = synthetic_result(variant)
+            if codes and variant in codes:
+                result["code"] = codes[variant]
+                result["lines"] = ["Пользователь ИБ не идентифицирован"]
+            return result
+
+        missing = ROOT / "tests" / "_no-such-local-paths.json"
+        original = exec_probe.run
+        exec_probe.run = stub
+        try:
+            with tempfile.TemporaryDirectory() as raw:
+                command = ["--local", str(missing), "--work", str(pathlib.Path(raw) / "work"),
+                           "--bin", BIN, "--ib", IB]
+                if option == "--caseload":
+                    # Лестница загрузки мутирующая: гейты пропускают её только с каталогом
+                    # конфигурации (из него пишется файл списка) и с явного разрешения.
+                    command += ["--cfg", synthetic_cfg(pathlib.Path(raw)), "--allow-mutating"]
+                json_path = pathlib.Path(raw) / "case.json"
+                code = silent_main(command + [option, "--json", str(json_path)])
+                report = json.loads(json_path.read_text(encoding="utf-8"))
+        finally:
+            exec_probe.run = original
+        return code, calls, report
+
+    def test_every_double_is_named_once_by_the_two_ladders(self):
+        named = exec_probe.case_variants()
+        self.assertEqual(len(named), 11, "регистровых двойников должно быть одиннадцать")
+        self.assertEqual(len(set(named)), len(named), "двойник назван дважды")
+        self.assertEqual(sorted(named), sorted(exec_probe.CASE_VARIANTS))
+        covered = []
+        for name, ladder in self.LADDERS:
+            twins = exec_probe.case_ladder_variants(ladder)
+            self.assertEqual(len(twins), len(set(twins)), name)
+            covered += twins
+        self.assertEqual(sorted(covered), sorted(exec_probe.CASE_VARIANTS),
+                         "двойник обязан встречаться в лестницах ровно один раз")
+        self.assertEqual(sorted(exec_probe.case_ladder_variants(exec_probe.CASECHECK_LADDER)),
+                         sorted(self.CASECHECK_TWINS), "лестница проверки меряет двойники проверки")
+        self.assertEqual(sorted(exec_probe.case_ladder_variants(exec_probe.CASELOAD_LADDER)),
+                         sorted(self.CASELOAD_TWINS), "лестница загрузки меряет двойники загрузки")
+        self.assertEqual(len(exec_probe.CASECHECK_LADDER), 25)
+        self.assertEqual(len(exec_probe.CASELOAD_LADDER), 12)
+
+    def test_every_double_is_a_renamed_measured_step(self):
+        """Двойник обязан быть переименованным ШАГОМ, а не новой командой: близнец — прогоняемая
+        запись `VARIANT_COMMAND`, и сам двойник близнецом быть не может."""
+        for variant in exec_probe.CASE_VARIANTS:
+            self.assertIn(variant, exec_probe.VARIANTS, variant)
+            twin, spelling_case, spelling_measured, part = exec_probe.case_twin_of(variant)
+            self.assertIn(twin, exec_probe.VARIANTS, f"{variant}: близнец {twin} не вариант замера")
+            self.assertNotIn(twin, exec_probe.CASE_VARIANTS, f"{variant}: близнец сам себе двойник")
+            self.assertIn(part, ("names", "tail"), variant)
+            self.assertNotEqual(spelling_case, spelling_measured, variant)
+            self.assertEqual(spelling_case.lower(), spelling_measured.lower(), variant)
+
+    def test_double_differs_from_its_twin_by_one_token_of_the_named_part(self):
+        """Сравнение идёт фактической формой команды, а не строками таблицы: изменена ровно
+        названная часть, ровно один токен, и только регистром."""
+        for variant in exec_probe.case_variants():
+            pair = exec_probe.case_twin_signature_diff(variant)
+            self.assertEqual(pair["differs_by"], [pair["part"]], variant)
+            self.assertEqual(len(pair["changed_tokens"]), 1, f"{variant}: изменено не одно написание")
+            self.assertTrue(pair["register_only"], f"{variant}: различие не сводится к регистру")
+
+    def test_double_spellings_are_absent_from_the_name_measurement(self):
+        """Строчное или верхнее написание двойника в замере отсутствует, а измеренное написание
+        близнеца — ЕДИНСТВЕННОЕ с таким `lower()`: иначе сравнение отвечало бы не на вопрос
+        «принято ли это написание»."""
+        measured = measured_flag_names()
+        flag_names = {name for name in measured if name.startswith(("/", "-"))}
+        for variant in exec_probe.case_variants():
+            pair = exec_probe.case_twin_signature_diff(variant)
+            self.assertNotIn(pair["spelling_case"], measured,
+                             f"{variant}: написание {pair['spelling_case']} уже измерено")
+            self.assertIn(pair["spelling_measured"], measured,
+                          f"{variant}: близнец носит неизмеренное написание")
+            same_lower = {name for name in flag_names
+                          if name.lower() == pair["spelling_case"].lower()}
+            self.assertEqual(same_lower, {pair["spelling_measured"]},
+                             f"{variant}: у написания {pair['spelling_case']} есть другие измерения")
+
+    def test_two_doubles_never_neighbour_each_other(self):
+        for name, ladder in self.LADDERS:
+            self.assertEqual(exec_probe.case_twin_adjacency(ladder), [],
+                             f"{name}: шаг меняет два написания сразу или двойнику не хватает близнеца")
+
+    def test_ladder_returns_to_its_twin_after_every_double(self):
+        """Сброс измеряется в том же прогоне: сразу за двойником стоит его близнец, и лестница
+        кончается измеренным шагом, а не двойником."""
+        for name, ladder in self.LADDERS:
+            variants = [variant for variant, _kind, _encoding in ladder]
+            self.assertNotIn(variants[-1], exec_probe.CASE_TWIN,
+                             f"{name}: последний шаг — двойник, сброс не измерен")
+            for index, variant in enumerate(variants):
+                if variant not in exec_probe.CASE_TWIN:
+                    continue
+                twin = exec_probe.CASE_TWIN[variant][0]
+                self.assertEqual(variants[index + 1], twin,
+                                 f"{name}: после {variant} нет возврата к {twin}")
+
+    def test_doubles_carry_no_prediction_and_the_reason_names_their_twin(self):
+        self.assertEqual({variant for variant in exec_probe.PREDICTIONS
+                          if variant.startswith("case-")}, set(),
+                         "у регистрового двойника предсказания быть не может")
+        self.assertEqual(set(exec_probe.CASE_OBSERVATION_REASONS), set(exec_probe.CASE_VARIANTS))
+        self.assertEqual(sorted(exec_probe.CASE_OBSERVATION_ONLY), sorted(exec_probe.CASE_VARIANTS))
+        for variant, reason in exec_probe.CASE_OBSERVATION_REASONS.items():
+            twin = exec_probe.CASE_TWIN[variant][0]
+            self.assertTrue(reason.strip(), variant)
+            self.assertIn(f"`{twin}`", reason, f"{variant}: причина не называет измеренного близнеца")
+
+    def test_only_the_loading_doubles_are_mutating(self):
+        self.assertEqual({variant for variant in exec_probe.MUTATING_VARIANTS
+                          if variant.startswith("case-")}, set(self.CASELOAD_TWINS))
+        self.assertFalse(set(self.CASECHECK_TWINS) & set(exec_probe.MUTATING_VARIANTS),
+                         "двойник группы проверки ИБ не меняет")
+        observation = set(exec_probe.all_observation_variants())
+        self.assertTrue(set(self.CASECHECK_TWINS) <= observation,
+                        "двойники проверки должны входить в --all")
+        self.assertFalse(observation & set(self.CASELOAD_TWINS))
+        in_ladder = {variant for variant, _kind, _encoding in exec_probe.CASELOAD_LADDER
+                     if variant in exec_probe.MUTATING_VARIANTS}
+        self.assertTrue(set(self.CASELOAD_TWINS) <= in_ladder,
+                        "двойник загрузки обязан прогоняться как мутирующий шаг")
+        # Прочие мутирующие шаги лестницы — наследие зеркального префикса `LOADOPTS_LADDER`: у
+        # двойников загрузки нет права добавлять в лестницу шаги, которых там не было.
+        inherited = in_ladder - set(self.CASELOAD_TWINS)
+        loadopts = {variant for variant, _kind, _encoding in exec_probe.LOADOPTS_LADDER}
+        self.assertEqual(inherited - loadopts, set(),
+                         "у лестницы двойников появился мутирующий шаг не из LOADOPTS_LADDER")
+
+    def test_doubles_do_not_enter_the_check_ladder_coverage(self):
+        """Покрытие лестниц группы проверки (44 шага) от двойников не зависит: двойники живут
+        своими лестницами, иначе `check_observation_variants` перестал бы описывать CHECK_LADDER
+        и CHECKCMD_LADDER."""
+        coverage = exec_probe.check_observation_variants()
+        self.assertEqual(len(coverage), 44, "покрытие группы проверки сдвинулось")
+        self.assertFalse(set(coverage) & set(exec_probe.CASE_VARIANTS),
+                         "регистровый двойник попал в покрытие лестницы проверки")
+
+    def test_cfg_is_needed_exactly_where_the_command_takes_a_directory(self):
+        """Гейт `main` смотрит на форму команды, а не на префикс имени: `case-load-cmd-lower`
+        начинается не с `load`, но позицию аргумента каталога несёт."""
+        for variant in ("load-ok", "load-listfile-ok", "load-format-flag") + self.CASELOAD_TWINS:
+            self.assertTrue(exec_probe.needs_cfg(variant), variant)
+        for variant in self.CASECHECK_TWINS:
+            self.assertFalse(exec_probe.needs_cfg(variant), variant)
+        for variant in exec_probe.check_observation_variants():
+            self.assertFalse(exec_probe.needs_cfg(variant), variant)
+
+    def test_caseload_refuses_before_the_platform_starts(self):
+        """Без `--cfg` лестница не является наблюдением загрузки, без `--allow-mutating` она
+        мутирующая: оба отказа предшествуют запуску платформы."""
+        missing = ROOT / "tests" / "_no-such-local-paths.json"
+        calls = []
+
+        def stub(argv_line, **kwargs):
+            calls.append(list(argv_line))
+            raise AssertionError("без --cfg и без --allow-mutating платформу запускать нельзя")
+
+        original = exec_probe.subprocess.Popen
+        exec_probe.subprocess.Popen = stub
+        try:
+            with tempfile.TemporaryDirectory() as raw, contextlib.redirect_stderr(io.StringIO()):
+                base = ["--local", str(missing), "--work", str(pathlib.Path(raw) / "work"),
+                        "--bin", BIN, "--ib", IB]
+                self.assertEqual(exec_probe.main(base + ["--caseload"]), 2, "--caseload без --cfg")
+                self.assertEqual(exec_probe.main(base + ["--cfg", CFG, "--caseload"]), 2,
+                                 "--caseload без --allow-mutating")
+        finally:
+            exec_probe.subprocess.Popen = original
+        self.assertEqual(calls, [], "отказ обязан предшествовать запуску платформы")
+
+    def test_case_ladders_are_named_options_of_the_script(self):
+        text = (ROOT / "scripts" / "exec_probe.py").read_text(encoding="utf-8")
+        for option in ("--casecheck", "--caseload"):
+            self.assertIn(option, text, "лестница не вызывается из командной строки")
+        for ladder in ("CASECHECK_LADDER", "CASELOAD_LADDER"):
+            self.assertIn(ladder, text, "лестница не названа в скрипте")
+
+    def test_case_ladders_run_to_the_end_without_the_platform(self):
+        for option, ladder in (("--casecheck", exec_probe.CASECHECK_LADDER),
+                               ("--caseload", exec_probe.CASELOAD_LADDER)):
+            code, calls, report = self.run_ladder(option, ladder)
+            twins = exec_probe.case_ladder_variants(ladder)
+            self.assertEqual(code, 0, option)
+            self.assertEqual([item["variant"] for item in calls],
+                             [variant for variant, _kind, _encoding in ladder], option)
+            self.assertTrue(report["case_discipline_ok"], option)
+            self.assertEqual(report["case_variants_run"], twins, option)
+            self.assertEqual(report["case_twin_adjacency_problems"], [], option)
+            self.assertTrue(report["case_spelling_register_only"], option)
+            self.assertTrue(report["case_prediction_free"], option)
+            self.assertTrue(report["case_unpredicted_matches_list"], option)
+            self.assertEqual(sorted(report["case_spelling_pairs"]), sorted(twins), option)
+            self.assertEqual(sorted(report["case_twin_comparison"]), sorted(twins),
+                             f"{option}: двойник сравнён с близнецом не в этом замере")
+            self.assertEqual(report["case_same_as_twin"], sorted(twins),
+                             f"{option}: подменённая платформа даёт один исход на всех шагах")
+            self.assertEqual(report["case_differs_from_twin"], [], option)
+            if option == "--caseload":
+                for item in calls:
+                    self.assertTrue(item["cfg"], f"{item['variant']}: лестница не несёт --cfg")
+                    if exec_probe.needs_loadlist(item["variant"]):
+                        self.assertTrue(item["loadlist"], f"{item['variant']}: нет файла списка")
+
+    def test_a_double_that_differs_from_its_twin_does_not_break_the_exit_code(self):
+        """«регистр различили» — находка наблюдения, а не поломка прогона: код отвечает за
+        дисциплину (один токен на шаг, соседство близнеца, отсутствие предсказаний)."""
+        variant = "case-modules-lower"
+        code, _calls, report = self.run_ladder("--casecheck", exec_probe.CASECHECK_LADDER,
+                                               {variant: 101})
+        self.assertEqual(code, 0, "исход двойника не должен влиять на код возврата")
+        self.assertTrue(report["case_discipline_ok"])
+        self.assertIn(variant, report["case_differs_from_twin"])
+        self.assertNotIn(variant, report["case_same_as_twin"])
+        value = report["case_twin_comparison"][variant]
+        self.assertEqual((value["code"], value["twin_code"]), (101, 0), variant)
+        self.assertFalse(value["same_outcome"], variant)
+        self.assertEqual(value["twin"], exec_probe.CASE_TWIN[variant][0], variant)
+
+
 class TestMutatingVariants(unittest.TestCase):
     """Варианты, способные изменить состояние ИБ: названы, отделены от `--all`, достигаются
     названной лестницей и без `--allow-mutating` не запускаются."""
 
     NAMED_LADDERS = (exec_probe.PREDEFINED_LADDER, exec_probe.EXTENSION_LADDER,
-                     exec_probe.LOADOPTS_LADDER, exec_probe.UPDATE_LADDER, exec_probe.MODE_LADDER)
+                     exec_probe.LOADOPTS_LADDER, exec_probe.UPDATE_LADDER, exec_probe.MODE_LADDER,
+                     exec_probe.CASELOAD_LADDER)
 
     def test_mutating_variants_are_launch_variants(self):
         self.assertTrue(set(exec_probe.MUTATING_VARIANTS) <= set(exec_probe.VARIANTS))
@@ -1217,13 +1507,17 @@ class TestMutatingVariants(unittest.TestCase):
         original = exec_probe.subprocess.Popen
         exec_probe.subprocess.Popen = stub
         try:
-            for option in ("--predefined", "--extensions", "--loadopts", "--update", "--modes"):
+            for option in ("--predefined", "--extensions", "--loadopts", "--update", "--modes",
+                           "--caseload"):
                 code = exec_probe.main(["--local", str(missing), "--work", "work", "--bin", BIN,
                                         "--ib", IB, "--cfg", CFG, option])
                 self.assertEqual(code, 2, option)
             code = exec_probe.main(["--local", str(missing), "--work", "work", "--bin", BIN,
                                     "--ib", IB, "--cfg", CFG, "--variant", "config-load-ok"])
             self.assertEqual(code, 2, "--variant config-load-ok")
+            code = exec_probe.main(["--local", str(missing), "--work", "work", "--bin", BIN,
+                                    "--ib", IB, "--cfg", CFG, "--variant", "case-load-cmd-lower"])
+            self.assertEqual(code, 2, "--variant case-load-cmd-lower")
         finally:
             exec_probe.subprocess.Popen = original
         self.assertEqual(calls, [], "отказ обязан предшествовать запуску платформы")
@@ -1300,7 +1594,8 @@ class TestLoadListFile(unittest.TestCase):
 
     def test_needs_loadlist_marks_exactly_the_listfile_variants(self):
         expected = {"load-listfile-ok", "load-format-flag", "load-format-hierarchical",
-                    "load-format-plain", "load-format-bogus"}
+                    "load-format-plain", "load-format-bogus",
+                    "case-listfile-lower", "case-format-lower"}
         marked = {variant for variant in exec_probe.VARIANTS if exec_probe.needs_loadlist(variant)}
         self.assertEqual(marked, expected)
 
@@ -1309,6 +1604,23 @@ class TestLoadListFile(unittest.TestCase):
             flags = argv(variant)
             index = flags.index("-listFile")
             self.assertEqual(flags[index + 1], "work/exec_loadlist.txt", variant)
+
+    def test_register_twins_keep_the_measured_argument_shape(self):
+        """Строчное написание меняет имя, но не форму команды: у `case-listfile-lower` файл списка
+        стоит следующим токеном после `-listfile`, а у `case-format-lower` `-listFile <файл>`
+        остаётся измеренным написанием рядом со строчным `-format` (иначе шагу изменились бы два
+        написания сразу)."""
+        lower = argv("case-listfile-lower")
+        index = lower.index("-listfile")
+        self.assertEqual(lower[index + 1], "work/exec_loadlist.txt")
+        self.assertNotIn("-listFile", lower, "у двойника имени `-listFile` менять нечего")
+
+        mixed = argv("case-format-lower")
+        self.assertIn("-format", mixed)
+        self.assertNotIn("-Format", mixed)
+        position = mixed.index("-listFile")
+        self.assertEqual(mixed[position + 1], "work/exec_loadlist.txt")
+        self.assertEqual(mixed[position + 2:], ["-format"])
 
 
 class TestPredictions(unittest.TestCase):

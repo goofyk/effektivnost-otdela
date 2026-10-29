@@ -79,6 +79,19 @@ BSL: начальные данные, тесты и отчёт нельзя пр
 Прогонывать их можно только на отдельной временной ИБ, созданной `scripts/ib_loop.py create`, а не на
 ИБ гейта.
 
+Лестницы регистровых двойников (замер 26): `--casecheck` и `--caseload`. Каждому уже измеренному
+шагу подбирается двойник, у которого РОВНО ОДНО написание (имя команды или имя модификатора)
+записано в другом регистре: `/CheckModules` -> `/checkmodules`, `-HandlersExistence` ->
+`-handlersexistence`, `-listFile` -> `-listfile`, `-Format` -> `-format`. Смысл замера — различает ли
+платформа регистр написания: написание, которого в измеренном корпусе 426 имён нет, проверяется
+прогоном, а не догадкой. Двойник стоит рядом со своим близнецом, а после двойника лестница
+возвращается к близнецу, поэтому сравнение («исход тот же» / «исход другой») живёт в одном замере и
+не зависит от того, что шаг ранее что-то сломал. Различие двойника с близнецом проверяется по форме
+команды (`case_twin_signature_diff`): ровно один изменённый токен, и тот отличается только регистром.
+`--casecheck` только читает ИБ; `--caseload` загружает конфигурацию, поэтому её двойники стоят в
+`MUTATING_VARIANTS`. Предсказаний у двойников нет (`CASE_OBSERVATION_REASONS`): канон корпуса этих
+написаний не употребляет, а предсказывать по исходу близнеца значило бы предсказывать по замеру.
+
 Предсказания (`PREDICTIONS`) записаны до прогона и имеют проверяемый источник: файл корпуса из
 `local.paths.json` с цитируемым именем или отчёт контура с названным ключом; читаемость источника
 проверяет `verify_prediction_sources`, а не человек. Сбывшееся предсказание требует кода возврата:
@@ -104,6 +117,12 @@ BSL: начальные данные, тесты и отчёт нельзя пр
          --json reports/exec-16-update.json
      python scripts/exec_probe.py --modes --allow-mutating --timeout 90 \
          --json reports/exec-16-modes.json
+     # Регистровые двойники (замер 26): --casecheck только читает ИБ, --caseload загружает
+     # конфигурацию и потому требует --allow-mutating
+     python scripts/exec_probe.py --casecheck --timeout 90 \
+         --json reports/flags-26-casecheck.json
+     python scripts/exec_probe.py --caseload --allow-mutating --timeout 90 \
+         --json reports/flags-26-caseload.json
 """
 from __future__ import annotations
 
@@ -483,6 +502,23 @@ VARIANT_COMMAND = {
     "check-config-reporttype-names": ("DESIGNER", ["/CheckConfig"]),
     "check-config-reporttype-ids": ("DESIGNER", ["/CheckConfig"]),
     "check-config-reporttype-brief": ("DESIGNER", ["/CheckConfig"]),
+    # Регистровые двойники уже измеренных шагов (замер 26). Команда здесь записана тем написанием,
+    # которого в измеренных написаниях (`p1c/src/p1c/data/test_cli_flags.json`) нет: наблюдение
+    # именно о том, примет ли платформа написание, не встречающееся в измеренном корпусе имён.
+    # Двойники группы проверки — только чтение; двойники загрузки мутируют ИБ (см. MUTATING_VARIANTS).
+    # Имя команды отличается от близнеца только регистром, поэтому `variant_signature` различает их
+    # только по частью `names`.
+    "case-modules-lower": ("DESIGNER", ["/checkmodules"]),
+    "case-modules-upper": ("DESIGNER", ["/CHECKMODULES"]),
+    "case-config-lower": ("DESIGNER", ["/checkconfig"]),
+    "case-config-upper": ("DESIGNER", ["/CHECKCONFIG"]),
+    "case-config-handlers-lower": ("DESIGNER", ["/CheckConfig"]),
+    "case-config-handlers-upper": ("DESIGNER", ["/CheckConfig"]),
+    "case-config-extended-lower": ("DESIGNER", ["/CheckConfig"]),
+    "case-config-extended-upper": ("DESIGNER", ["/CheckConfig"]),
+    "case-load-cmd-lower": ("DESIGNER", ["/loadconfigfromfiles", CFG_ARG]),
+    "case-listfile-lower": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
+    "case-format-lower": ("DESIGNER", ["/LoadConfigFromFiles", CFG_ARG]),
 }
 
 # Хвост шагов группы проверки. Устройство такое: измеренный префикс (канон `check` из
@@ -625,6 +661,24 @@ VARIANT_TAIL = {
     "check-config-reporttype-names": list(CHECK_TAIL_TYPE_NAMES),
     "check-config-reporttype-ids": list(CHECK_TAIL_TYPE_IDS),
     "check-config-reporttype-brief": list(CHECK_TAIL_TYPE_BRIEF),
+    # Хвосты регистровых двойников. Строится из той же именованной цепи, что и близнец, и меняет
+    # ровно один токен — написание имени: `-HandlersExistence` -> `-handlersexistence`,
+    # `-ExtendedModulesCheck` -> `-extendedmodulescheck`. Длины хвостов двойника и близнеца равны,
+    # поэтому позиционное сравнение (`signature_tokens`) даёт ровно один изменённый токен.
+    # Двойники имён команд (`case-modules-*`, `case-config-{lower,upper}`) несут тот же хвост,
+    # что и их близнецы: различие остаётся только в имени команды.
+    "case-modules-lower": list(CHECK_TAIL_BASE),
+    "case-modules-upper": list(CHECK_TAIL_BASE),
+    "case-config-lower": list(CHECK_TAIL_BASE),
+    "case-config-upper": list(CHECK_TAIL_BASE),
+    "case-config-handlers-lower": list(CHECK_TAIL_UNREFERENCED) + ["-handlersexistence"],
+    "case-config-handlers-upper": list(CHECK_TAIL_UNREFERENCED) + ["-HANDLERSEXISTENCE"],
+    "case-config-extended-lower": list(CHECK_TAIL_EMPTYHANDLERS) + ["-extendedmodulescheck"],
+    "case-config-extended-upper": list(CHECK_TAIL_EMPTYHANDLERS) + ["-EXTENDEDMODULESCHECK"],
+    # `-listFile` -> `-listfile`, `-Format` -> `-format`: у `-format`-двойника `-listFile` остаётся
+    # измеренным написанием, иначе шагу изменились бы два токена.
+    "case-listfile-lower": ["-listfile", LIST_ARG],
+    "case-format-lower": ["-listFile", LIST_ARG, "-format"],
 }
 
 # Варианты, которые могут изменить состояние ИБ: обновить конфигурацию или структуру базы данных,
@@ -643,6 +697,11 @@ MUTATING_VARIANTS = (
     "load-format-flag", "load-format-hierarchical", "load-format-plain", "load-format-bogus",
     "update-cfg-noarg", "update-dbcfg", "update-dbcfg-server", "config-update-dbcfg-server",
     "config-load-ok",
+    # Регистровые двойники загрузки (замер 26): исход близнецов (`load-ok`, `load-listfile-ok`,
+    # `load-format-flag`) в одном корпусе нестабилен (0 в одном прогоне, 1 в другом), а
+    # `-listFile`/`-Format` в измеренных написаниях относятся к загрузке конфигурации.
+    # Оцениваем их как опасные: двойник считается мутирующим и в `--all` не входит.
+    "case-load-cmd-lower", "case-listfile-lower", "case-format-lower",
 )
 
 # Остальные варианты группы `load-*` в `MUTATING_VARIANTS` не стоят, и причина записана здесь,
@@ -679,6 +738,49 @@ VARIANTS = tuple(VARIANT_COMMAND)
 def all_observation_variants() -> tuple:
     """`VARIANTS` без `MUTATING_VARIANTS`: из них состоит `--all`, оно не меняет состояние ИБ."""
     return tuple(variant for variant in VARIANTS if variant not in MUTATING_VARIANTS)
+
+
+# Регистровые двойники (замер 26). Каждый шаг — близнец уже измеренного шага, у которого ровно одно
+# написание (имя команды или имя модификатора) записано в другом регистре. Отличие от близнеца
+# обязано быть только регистровым: иначе замер отвечал бы на вопрос «имя принято», а не «принято ли
+# это написание».
+CASE_VARIANTS = (
+    "case-modules-lower", "case-modules-upper", "case-config-lower", "case-config-upper",
+    "case-config-handlers-lower", "case-config-handlers-upper",
+    "case-config-extended-lower", "case-config-extended-upper",
+    "case-load-cmd-lower", "case-listfile-lower", "case-format-lower",
+)
+
+# Двойник -> близнец. `part` говорит, какая часть формы команды меняет написание: имя команды
+# (`names`) или имя модификатора в хвосте (`tail`). Близнец неизменен во всех остальных позициях.
+CASE_TWIN = {
+    "case-modules-lower": ("check-modules-base", "/checkmodules", "/CheckModules", "names"),
+    "case-modules-upper": ("check-modules-base", "/CHECKMODULES", "/CheckModules", "names"),
+    "case-config-lower": ("check-config-base", "/checkconfig", "/CheckConfig", "names"),
+    "case-config-upper": ("check-config-base", "/CHECKCONFIG", "/CheckConfig", "names"),
+    "case-config-handlers-lower": ("check-config-handlers", "-handlersexistence",
+                                   "-HandlersExistence", "tail"),
+    "case-config-handlers-upper": ("check-config-handlers", "-HANDLERSEXISTENCE",
+                                   "-HandlersExistence", "tail"),
+    "case-config-extended-lower": ("check-config-extended", "-extendedmodulescheck",
+                                   "-ExtendedModulesCheck", "tail"),
+    "case-config-extended-upper": ("check-config-extended", "-EXTENDEDMODULESCHECK",
+                                   "-ExtendedModulesCheck", "tail"),
+    "case-load-cmd-lower": ("load-ok", "/loadconfigfromfiles", "/LoadConfigFromFiles", "names"),
+    "case-listfile-lower": ("load-listfile-ok", "-listfile", "-listFile", "tail"),
+    "case-format-lower": ("load-format-flag", "-format", "-Format", "tail"),
+}
+
+
+def case_variants() -> tuple:
+    """Регистровые двойники, для которых в `CASE_TWIN` записан близнец (все одиннадцать)."""
+    return tuple(variant for variant in CASE_VARIANTS if variant in CASE_TWIN)
+
+
+def case_twin_of(variant: str) -> tuple:
+    """Близнец двойника: (вариант-близнец, написание двойника, измеренное написание, часть формы)."""
+    twin, case_spelling, measured_spelling, part = CASE_TWIN[variant]
+    return twin, case_spelling, measured_spelling, part
 
 
 # Предсказания, записанные ДО прогона, и их источник. Смысл: лестница проверяет не «что вышло», а
@@ -1024,6 +1126,15 @@ def needs_loadlist(variant: str) -> bool:
         or LIST_ARG in signature["tail"]
 
 
+def needs_cfg(variant: str) -> bool:
+    """Подставляет ли вариант метку каталога конфигурации (`--cfg`) — в шаблон команды или в
+    значение модификатора. Гейт `main` проверяет форму команды, а не префикс имени: регистровый
+    двойник команды загрузки (`case-load-cmd-lower`) начинается не с `load`."""
+    signature = variant_signature(variant)
+    return CFG_ARG in signature["names"] or CFG_ARG in signature["args"] \
+        or CFG_ARG in signature["tail"]
+
+
 def loadlist_paths(cfg: pathlib.Path) -> list:
     r"""Имена файлов для `-listFile`: абсолютные пути **корневых** XML-файлов конфигурации.
 
@@ -1360,6 +1471,16 @@ def main(argv: list | None = None) -> int:
                         help="лестница CHECKCMD_LADDER: полное зеркало `CHECK_LADDER` (те же 22 "
                              "шага и те же хвосты), но команда `/CheckConfig` — та, которую в своей "
                              "команде проверки пишет корпус БСП")
+    parser.add_argument("--casecheck", action="store_true",
+                        help="лестница CASECHECK_LADDER: регистровые двойники уже измеренных шагов "
+                             "группы проверки (`/checkmodules`, `/CHECKMODULES`, `/checkconfig`, "
+                             "`/CHECKCONFIG`, `-handlersexistence`, `-HANDLERSEXISTENCE`, "
+                             "`-extendedmodulescheck`, `-EXTENDEDMODULESCHECK`) рядом с их "
+                             "близнецами; шаг меняет ровно одно написание. Только чтение ИБ.")
+    parser.add_argument("--caseload", action="store_true",
+                        help="лестница CASELOAD_LADDER: регистровые двойники опций загрузки "
+                             "(`-listfile` против `-listFile`, `-format` против `-Format`) и строчное "
+                             "написание самой команды загрузки; требует --allow-mutating")
     parser.add_argument("--allow-mutating", action="store_true",
                         help="разрешить варианты из MUTATING_VARIANTS: они способны изменить "
                              "состояние ИБ. Без этого флага такая лестница не запускается (код 2). "
@@ -1376,13 +1497,14 @@ def main(argv: list | None = None) -> int:
     if not bin_path or not ib:
         print("exec_probe: нужны --bin и --ib (или local.paths.json)", file=sys.stderr)
         return 2
-    MUTATING_LADDERS = (args.predefined, args.extensions, args.loadopts, args.update, args.modes)
+    MUTATING_LADDERS = (args.predefined, args.extensions, args.loadopts, args.update, args.modes,
+                        args.caseload)
     if (args.controls or args.auth or any(MUTATING_LADDERS)) and not cfg:
         # Контрольные прогоны строятся на команде, исход которой известен (`/LoadConfigFromFiles`
         # даёт код 0 на рабочем каталоге конфигурации — подтверждение гейта). Без каталога контроль
         # не является контролем.
         print("exec_probe: для --controls, --auth и лестниц Task 16 (--predefined, --extensions, "
-              "--loadopts, --update, --modes) нужен --cfg (или local.paths.json: cfg)",
+              "--loadopts, --update, --modes, --caseload) нужен --cfg (или local.paths.json: cfg)",
               file=sys.stderr)
         return 2
     # Лестницы — тройки (режим, текст программы, кодирование): ровно одна переменная на шаг.
@@ -1410,6 +1532,10 @@ def main(argv: list | None = None) -> int:
         ladder, ladder_name = CHECK_LADDER, "CHECK_LADDER"
     elif args.checkconfig:
         ladder, ladder_name = CHECKCMD_LADDER, "CHECKCMD_LADDER"
+    elif args.casecheck:
+        ladder, ladder_name = CASECHECK_LADDER, "CASECHECK_LADDER"
+    elif args.caseload:
+        ladder, ladder_name = CASELOAD_LADDER, "CASELOAD_LADDER"
     elif args.sweep:
         ladder, ladder_name = SWEEP, "SWEEP"
     elif args.programs:
@@ -1424,8 +1550,11 @@ def main(argv: list | None = None) -> int:
         ladder_name = "ALL_VARIANTS"
     else:
         ladder, ladder_name = [(args.variant, args.program, args.encoding)], "single"
-    if not cfg and any(variant.startswith("load") for variant, _, _ in ladder):
-        # Команда контроля с пустым аргументом — не наблюдение, а артефакт запуска.
+    if not cfg and any(variant.startswith("load") or needs_cfg(variant)
+                       for variant, _, _ in ladder):
+        # Команда контроля с пустым аргументом — не наблюдение, а артефакт запуска. Проверка идёт
+        # по форме команды (`needs_cfg`), а не только по префиксу имени: регистровый двойник команды
+        # загрузки (`case-load-cmd-lower`) начинается не с `load`, но ту же позицию аргумента несёт.
         print("exec_probe: вариантам /LoadConfigFromFiles нужен --cfg (или local.paths.json: cfg)",
               file=sys.stderr)
         return 2
@@ -1693,6 +1822,69 @@ def main(argv: list | None = None) -> int:
               report["check_mirror_differs_by_command_only"])
         print("шаги без предсказания:", len(report["check_unpredicted_steps"]),
               "| сверяется со списком:", report["check_unpredicted_matches_list"])
+    if args.casecheck or args.caseload:
+        # Наблюдение регистровых двойников (замер 26). «Правильного» исхода у шага нет: принято
+        # написание или отвергнуто — обе находки одинакового веса. Поэтому код отвечает за
+        # дисциплину: один токен на шаг, соседство близнеца у каждого двойника, отсутствие рядом
+        # двух двойников, и что различие двойника с близнецом сводится к одному регистру
+        # (`case_twin_signature_diff`).
+        # Исход двойника сверяется с исходом его близнеца в ЭТОМ же замере: у группы проверки —
+        # вердиктом (`check_observation`), у загрузки — классом исхода (`outcome_key`), потому что
+        # код близнецов загрузки нестабилен (0 в одном прогоне, 1 в другом).
+        by_variant = {}
+        for result in results:
+            by_variant.setdefault(result["variant"], result)
+        report["case_variants_run"] = case_ladder_variants(ladder)
+        report["case_twin_adjacency_problems"] = case_twin_adjacency(ladder)
+        report["case_spelling_pairs"] = {variant: case_twin_signature_diff(variant)
+                                         for variant in report["case_variants_run"]}
+        report["case_spelling_register_only"] = all(pair["register_only"]
+                                                   for pair in report["case_spelling_pairs"].values())
+        comparison = {}
+        for variant in report["case_variants_run"]:
+            twin = CASE_TWIN[variant][0]
+            left, right = by_variant.get(variant), by_variant.get(twin)
+            if left is None or right is None:
+                continue
+            value = {"twin": twin, "code": left["code"], "twin_code": right["code"],
+                     "outcome": list(outcome_key(left)), "twin_outcome": list(outcome_key(right)),
+                     "same_code": left["code"] == right["code"],
+                     "same_outcome": outcome_key(left) == outcome_key(right)}
+            if args.casecheck:
+                value["verdict"] = check_observation(left)["verdict"]
+                value["twin_verdict"] = check_observation(right)["verdict"]
+            comparison[variant] = value
+        report["case_twin_comparison"] = comparison
+        report["case_same_as_twin"] = sorted(v for v, c in comparison.items() if c["same_outcome"])
+        report["case_differs_from_twin"] = sorted(v for v, c in comparison.items()
+                                                  if not c["same_outcome"])
+        report["case_prediction_free"] = not [v for v in report["case_variants_run"]
+                                             if v in PREDICTIONS]
+        ladder_case_steps = set(variant for variant, _program, _encoding in ladder)
+        report["case_unpredicted_matches_list"] = (
+            sorted(v for v in report["case_variants_run"] if v not in PREDICTIONS)
+            == sorted(set(CASE_OBSERVATION_ONLY) & ladder_case_steps))
+        report["case_discipline_ok"] = (not report["case_twin_adjacency_problems"]
+                                       and report["case_spelling_register_only"]
+                                       and report["case_prediction_free"]
+                                       and report["case_unpredicted_matches_list"]
+                                       and bool(report["case_variants_run"]))
+        print("регистровые двойники:", report["case_variants_run"])
+        for variant in sorted(report["case_spelling_pairs"]):
+            pair = report["case_spelling_pairs"][variant]
+            print(f"   {variant}: {pair['spelling_case']} против близнеца {pair['twin']}"
+                  f" ({pair['spelling_measured']}) | часть {pair['part']}"
+                  f" | только регистр: {pair['register_only']}")
+        for variant in sorted(comparison):
+            value = comparison[variant]
+            print(f"   {variant}: код {value['code']} против {value['twin']} код"
+                  f" {value['twin_code']} | исход совпал: {value['same_outcome']}")
+        print("нарушений порядка шагов:", report["case_twin_adjacency_problems"] or "нет")
+        print("совпали с близнецом:", report["case_same_as_twin"] or "ни один",
+              "| отличаются:", report["case_differs_from_twin"] or "ни один")
+        print("двойников прогнано:", len(report["case_variants_run"]),
+              "| предсказаний у двойников нет:", report["case_prediction_free"],
+              "| непредсказанные сверяются со списком:", report["case_unpredicted_matches_list"])
     if args.json:
         out = pathlib.Path(args.json)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -1727,6 +1919,16 @@ def main(argv: list | None = None) -> int:
             print("exec_probe: источник предсказания не читается: предсказание без источника "
                   "предсказанием не считается", file=sys.stderr)
         return 0 if (ladder_ok(report) and report["prediction_sources_ok"]) else 1
+    if args.casecheck or args.caseload:
+        # Код отвечает за дисциплину двойников: один изменённый токен на шаг, соседство близнеца у
+        # каждого двойника, различие двойника с близнецом ровно регистром, отсутствие предсказаний у
+        # двойников и сверка списка непредсказанных шагов. Сам результат сравнения («регистр не
+        # различили» или «различили») живёт в ключах `case_*`: оба ответа — находки наблюдения.
+        if not report["case_discipline_ok"]:
+            print("exec_probe: дисциплина лестницы регистровых двойников нарушена:",
+                  report["case_twin_adjacency_problems"] or "различие двойника не сводится к регистру",
+                  file=sys.stderr)
+        return 0 if (ladder_ok(report) and report["case_discipline_ok"]) else 1
     report["execution_confirmed"] = bool(executed)
     return 0 if ladder_ok(report) else 1
 
@@ -1923,6 +2125,61 @@ CHECKCMD_LADDER = (("check-config-base", "marker", "cp1251"),
                    ("check-config-reporttype-ids", "marker", "cp1251"),
                    ("check-config-reporttype-brief", "marker", "cp1251"))
 
+# Лестница регистровых двойников группы проверки (замер 26, `--casecheck`). Шаг за шагом меняется
+# РОВНО ОДНО написание: имя команды (`/CheckModules` -> `/checkmodules`) или имя модификатора
+# (`-HandlersExistence` -> `-handlersexistence`). Близнец стоит соседом у своего двойника, а после
+# двойника лестница возвращается к близнецу: «сброс» измеряется в том же прогоне, и вывод «имя
+# принято независимо от регистра» не зависит от того, что предыдущий шаг что-то сломал (прецедент:
+# повтор `load-ok` в `TEST_LADDER`). Два регистровых двойника не соседствуют: иначе шаг менял бы два
+# написания сразу.
+# Предсказания у этих шагов нет: ни один корпус не пишет эти имена в строчном или верхнем регистре
+# (проверено сканом корпусов), а предсказывать по исходу близнеца значило бы предсказывать по самому
+# замеру. Причина записана в `CASE_OBSERVATION_REASONS`.
+CASECHECK_LADDER = (("check-modules-base", "marker", "cp1251"),
+                    ("case-modules-lower", "marker", "cp1251"),
+                    ("check-modules-base", "marker", "cp1251"),
+                    ("case-modules-upper", "marker", "cp1251"),
+                    ("check-modules-base", "marker", "cp1251"),
+                    ("check-config-base", "marker", "cp1251"),
+                    ("case-config-lower", "marker", "cp1251"),
+                    ("check-config-base", "marker", "cp1251"),
+                    ("case-config-upper", "marker", "cp1251"),
+                    ("check-config-base", "marker", "cp1251"),
+                    ("check-config-configlog", "marker", "cp1251"),
+                    ("check-config-references", "marker", "cp1251"),
+                    ("check-config-distributive", "marker", "cp1251"),
+                    ("check-config-unreferenced", "marker", "cp1251"),
+                    ("check-config-handlers", "marker", "cp1251"),
+                    ("case-config-handlers-lower", "marker", "cp1251"),
+                    ("check-config-handlers", "marker", "cp1251"),
+                    ("case-config-handlers-upper", "marker", "cp1251"),
+                    ("check-config-handlers", "marker", "cp1251"),
+                    ("check-config-emptyhandlers", "marker", "cp1251"),
+                    ("check-config-extended", "marker", "cp1251"),
+                    ("case-config-extended-lower", "marker", "cp1251"),
+                    ("check-config-extended", "marker", "cp1251"),
+                    ("case-config-extended-upper", "marker", "cp1251"),
+                    ("check-config-extended", "marker", "cp1251"))
+
+# Лестница регистровых двойников загрузки (замер 26, `--caseload`). Форма повторяет префикс
+# `LOADOPTS_LADDER` (те же измеренные опции частичной загрузки) и добавляет двойники: строчное имя
+# команды загрузки и строчные написания `-listFile` и `-Format`. Все три двойника мутирующие: они
+# загружают конфигурацию, поэтому лестница требует `--allow-mutating` и отдельной временной ИБ.
+# Исход близнецов загрузки в отчётах контура нестабилен (0 в одном прогоне, 1 в другом), поэтому
+# сравнение идёт по `outcome_key` внутри одного прогона, а не по предсказанию.
+CASELOAD_LADDER = (("load-ok", "marker", "cp1251"),
+                   ("case-load-cmd-lower", "marker", "cp1251"),
+                   ("load-ok", "marker", "cp1251"),
+                   ("load-files-flag", "marker", "cp1251"),
+                   ("load-files-onefile", "marker", "cp1251"),
+                   ("load-listfile-onefile", "marker", "cp1251"),
+                   ("load-listfile-ok", "marker", "cp1251"),
+                   ("case-listfile-lower", "marker", "cp1251"),
+                   ("load-listfile-ok", "marker", "cp1251"),
+                   ("load-format-flag", "marker", "cp1251"),
+                   ("case-format-lower", "marker", "cp1251"),
+                   ("load-format-flag", "marker", "cp1251"))
+
 # Шаги группы проверки, у которых предсказания нет, и почему. Предсказание обязано иметь читаемый
 # источник; корпус БСП подписывает из этой группы только семь флагов (стр. 2953-2969) и команду
 # `/CheckConfig` (стр. 2953). Остальные имена измерены замером 426 имён, но ни один корпус, ни один
@@ -1976,6 +2233,88 @@ def check_unpredicted_steps(ladder: tuple) -> list:
     """Шаги без предсказания: наблюдение ради наблюдения. Список обязан совпадать с
     `CHECK_OBSERVATION_ONLY` — тогда «не предсказали» не выглядит как «забыли предсказать»."""
     return sorted(variant for variant, _program, _encoding in ladder if variant not in PREDICTIONS)
+
+
+# Предсказания регистровых двойников (замер 26): их нет, и причина записана здесь по образцу
+# `CHECK_OBSERVATION_ONLY`. Предсказание обязано иметь читаемый источник: канон корпуса или отчёт
+# контура. Канон корпуса эти имена в строчном или верхнем регистре не пишет (проверено сканом
+# корпусов: ни одного вхождения `/checkmodules`, `/CHECKMODULES`, `/checkconfig`, `/CHECKCONFIG`,
+# `/loadconfigfromfiles`, `-listfile`, `-format`, `-handlersexistence`, `-extendedmodulescheck`),
+# а предсказывать по исходу близнеца значило бы предсказывать по самому замеру. Причина каждого
+# шага называет измеренного близнеца.
+CASE_OBSERVATION_REASONS = {
+    "case-modules-lower": "близнец `check-modules-base` измерен прогоном контура (код 0, чистая "
+                          "ИБ), но `/checkmodules` строчными ни один канон не пишет",
+    "case-modules-upper": "близнец тот же (`check-modules-base`); верхний регистр имени команды "
+                          "в измеренных написаниях отсутствует",
+    "case-config-lower": "близнец `check-config-base` измерен прогоном контура (код 0) и подписан "
+                         "каноном БСП как `/CheckConfig`; `/checkconfig` канон не пишет",
+    "case-config-upper": "близнец тот же (`check-config-base`); `/CHECKCONFIG` в измеренных "
+                         "написаниях отсутствует",
+    "case-config-handlers-lower": "близнец `check-config-handlers` измерен прогоном контура "
+                                  "(код 101, дефекты); канон пишет `-HandlersExistence`",
+    "case-config-handlers-upper": "близнец тот же (`check-config-handlers`); `-HANDLERSEXISTENCE` "
+                                  "в измеренных написаниях отсутствует",
+    "case-config-extended-lower": "близнец `check-config-extended` измерен прогоном контура "
+                                  "(код 101, дефекты); канон пишет `-ExtendedModulesCheck`",
+    "case-config-extended-upper": "близнец тот же (`check-config-extended`); `-EXTENDEDMODULESCHECK` "
+                                  "в измеренных написаниях отсутствует",
+    "case-load-cmd-lower": "близнец `load-ok` измерен многократно (везде код 0, 3 байта `/Out`), "
+                           "но переносить его исход на двойника значит предсказывать по будущему "
+                           "замеру; `/loadconfigfromfiles` нигде не встречается",
+    "case-listfile-lower": "близнец `load-listfile-ok` измерен (`-listFile <файл>`, канон БСП); "
+                           "`-listfile` в измеренных написаниях отсутствует",
+    "case-format-lower": "близнец `load-format-flag` измерен (`-Format`, канон БСП); `-format` в "
+                         "измеренных написаниях отсутствует",
+}
+CASE_OBSERVATION_ONLY = tuple(CASE_OBSERVATION_REASONS)
+
+
+def case_ladder_variants(ladder: tuple) -> list:
+    """Шаги лестницы, которые являются регистровыми двойниками (`case-*`)."""
+    return [variant for variant, _program, _encoding in ladder if variant in CASE_TWIN]
+
+
+def case_twin_adjacency(ladder: tuple) -> list:
+    """Порядок шагов лестницы двойников: у каждого двойника соседом стоит его близнец, и ни один
+    шаг не меняет два написания сразу (два двойника рядом). Нарушения — список с текстом."""
+    variants = [variant for variant, _program, _encoding in ladder]
+    problems = []
+    for index, variant in enumerate(variants):
+        if variant not in CASE_TWIN:
+            continue
+        neighbours = variants[index - 1:index] + variants[index + 1:index + 2]
+        twin = CASE_TWIN[variant][0]
+        if twin not in neighbours:
+            problems.append(f"{variant}: близнец {twin} не стоит соседом")
+        for other in neighbours:
+            if other in CASE_TWIN:
+                problems.append(f"{variant}: рядом стоит другой регистровый двойник {other}")
+    return problems
+
+
+def case_twin_signature_diff(variant: str) -> dict:
+    """Двойник против своего близнеца: ровно один изменённый токен и только регистром.
+
+    Таблица `CASE_TWIN` обязана описывать фактическую форму команды: сравнение идёт сигнатурами
+    (`variant_signature`), а не строками таблицы. Отсюда три требования: изменена ровно та часть,
+    которая названа в таблице, изменён ровно один токен, и написания двойника и близнеца различаются
+    только регистром. Нарушение означает, что шаг меняет не одно написание, а две разные вещи, и
+    наблюдение нельзя приписать регистру.
+    """
+    twin, spelling_case, spelling_measured, part = CASE_TWIN[variant]
+    left, right = variant_signature(variant), variant_signature(twin)
+    changed = [entry for entry in signature_tokens(left, right)
+               if entry["part"] in ("names", "tail")]
+    register_only = (signature_diff(left, right) == [part]
+                     and len(changed) == 1
+                     and changed[0]["from"] == spelling_case
+                     and changed[0]["to"] == spelling_measured
+                     and changed[0]["from"] != changed[0]["to"]
+                     and changed[0]["from"].lower() == changed[0]["to"].lower())
+    return {"twin": twin, "part": part, "spelling_case": spelling_case,
+            "spelling_measured": spelling_measured, "differs_by": signature_diff(left, right),
+            "changed_tokens": changed, "register_only": register_only}
 
 
 # Шаги прежних лестниц, где меняется ровно ДВА токена, и почему это всё ещё одно изменение.

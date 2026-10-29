@@ -1,7 +1,9 @@
 # Исполнительные формы командной строки 1С: что удалось измерить, а что нет
 
 Измерения делались скриптом `scripts/exec_probe.py` (лестницы `SWEEP`, `CONTROLS`, `NEGATIVE_LADDER`,
-`AUTH_LADDER`, `TEST_LADDER`, `MODE_LADDER` и одиночные контроли) на временной ИБ, никогда на ИБ
+`AUTH_LADDER`, `TEST_LADDER`, `MODE_LADDER`, лестницы группы проверки `CHECK_LADDER` и
+`CHECKCMD_LADDER`, лестницы регистровых двойников имён `CASECHECK_LADDER` и `CASELOAD_LADDER` и
+одиночные контроли) на временной ИБ, никогда на ИБ
 гейта и никогда одновременно с живой ИБ пользователя. Каждый шаг лестницы меняет ровно одну часть
 командной строки, поэтому различие исходов приписывается именно этой части. Код возврата платформы
 в этих прогоны отвечает только за дисциплину лестницы: исход живёт в `bytes` (размер `/Out`),
@@ -358,7 +360,138 @@ headless-проверки отчёт идёт только в `/Out`; `-ReportFo
 только про синтаксис: 73 байта `Синтаксических ошибок не обнаружено!` на всех 66 прогонах
 группы.
 
-## 12. Дословные таблицы прогонов
+## 12. Регистронезависимость написаний имён: 11 двойников — 11 совпадений с близнецами
+
+**Что такое шаг-двойник.** Двойник — копия уже измеренного шага, у которой ровно один токен
+команды перезаписан по регистру: `/CheckModules` → `/checkmodules` и `/CHECKMODULES`,
+`/CheckConfig` → `/checkconfig` и `/CHECKCONFIG`, `/LoadConfigFromFiles` →
+`/loadconfigfromfiles`, `-HandlersExistence` → `-handlersexistence` и `-HANDLERSEXISTENCE`,
+`-ExtendedModulesCheck` → `-extendedmodulescheck` и `-EXTENDEDMODULESCHECK`, `-listFile` →
+`-listfile`, `-Format` → `-format`. Всё остальное в строке запуска остаётся близнецовым: тот же
+режим, те же модификаторы доступа в том же порядке, та же ИБ, та же программа и кодирование,
+тот же канал `/Out`. Личное имя файла `/Out` содержит имя варианта (так устроен контур), поэтому
+сравнивается содержимое файла, а не его имя. Отличие двойника от близнеца считается по фактическому
+argv (`case_spelling_pairs[*].changed_tokens`), а не по нашей формулировке: у всех 11 шагов
+изменён ровно один токен и изменение только регистровое (`case_spelling_register_only = true`,
+`ladder_single_command_token = true`, `ladder_multi_token_steps = []`).
+
+**Дисциплина лестницы.** Двойники прогоняются внутри обычной лестницы, а не отдельным списком, и
+два двойника одного близнеца не имеют права стоять соседними шагами: между ними обязан встать
+этот же близнец — он работает «сбросом» состояния. Это проверяет `case_twin_adjacency`, её результат
+в артефактах — `case_twin_adjacency_problems = []`. Сравнение «двойник → близнец» происходит внутри
+одного прогона, по классу исхода (`outcome_key`: код, зависание, пустой/непустой `/Out`) плюс байты
+`/Out` и число строк `ВидОбъекта.ИмяОбъекта`.
+
+**Откуда взяты написания.** Имя близнеца — измеренное (замер 426 имён
+`p1c/src/p1c/data/test_cli_flags.json`, поле `files[].names`); написание двойника — тот же корень
+со сменой регистра, и самого написания двойника в таблице 426 имён нет (внешняя сверка:
+`case_in_measured = false` у всех 11, `lower()`-совпадение ровно одно — с именем близнеца).
+Для двух имён загрузки источник у строчного написания есть и в корпусах: синопсис комментария
+пишет `[-files][-listfile][-format]` (`docs/evidence/cli-canonical-usage.md`, строка 47), `-listfile`
+— 10 вхождений в шести корпусах (`reports/corpora-cli-usage-16.json`), тогда как `-listFile` — 3
+вхождения в БСП. Написания группы проверки (`/checkmodules`, `/CHECKCONFIG`, `-HANDLERSEXISTENCE`)
+ни в одном корпусе и ни в одной таблице имён не встречаются — эти написания придуманы нами специально:
+вопрос был не «встречается ли такое написание в корпусах», а «различает ли платформа регистр».
+
+**Почему у двойников нет предсказаний.** Предсказание обязано иметь читаемый источник, а источником
+для двойника мог бы быть только замер его близнеца — то есть предсказание по будущему замеру, круг.
+Отдельный род предсказаний «измеренный близнец предсказывает двойника» для этих шагов отклонён, и
+причина у него не одна:
+- близнецы группы проверки на битой ИБ уже дали три опровергнутых предсказания (раздел 11), то есть
+  их исход нельзя переносить на другой шаг как надёжный;
+- у близнецов формы загрузки исход зависит от состояния ИБ, а не от написания: `-listFile
+  <файл-список>` и `-Format` дают код 1 и 337 байт в четырёх артефактах LOADOPTS-лестницы, где ИБ
+  перед шагом восстанавливают (`reports/effect-16-loadopts-{fresh,fresh2,fresh3,full}.json`; дословно
+  `Файл - Configuration.xml: ошибка частичной загрузки - идентификатор … загружаемой конфигурации
+  отличается от идентификатора … сохраненной конфигурации` — отказ частичной загрузки из-за
+  несовпадения идентификаторов, §5 и §10 `docs/evidence/modifier-effects.md`), и код 0 и 3 байта там,
+  где эта конфигурация в ИБ уже загружена (`reports/effect-16-loadopts-shared.json`) — предсказание
+  по близнецу значило бы выбрать один из двух прогонов;
+- `load-ok` стабилен (код 0 и 3 байта во всех 32 его вхождениях в артефакты `reports/`), но перенести
+  его исход на `/loadconfigfromfiles` — всё равно значит предсказывать то, что этот же замер и
+  измеряет.
+
+Поэтому все 11 шагов идут наблюдением без предсказания, и причина каждого записана в
+`CASE_OBSERVATION_REASONS` (11 записей, каждая обязана называть
+близнеца): например, «близнец `check-modules-base` измерен прогоном контура (код 0, чистая ИБ),
+но `/checkmodules` строчными ни один канон не пишет» и «близнец `load-format-flag` измерен
+(`-Format`, канон БСП); `-format` в измеренных написаниях отсутствует». В артефактах это
+`case_prediction_free = true` и `case_unpredicted_matches_list = true`.
+
+| двойник | написание двойника | близнец | измеренное написание | часть |
+|---|---|---|---|---|
+| `case-modules-lower` | `/checkmodules` | `check-modules-base` | `/CheckModules` | `names` |
+| `case-modules-upper` | `/CHECKMODULES` | `check-modules-base` | `/CheckModules` | `names` |
+| `case-config-lower` | `/checkconfig` | `check-config-base` | `/CheckConfig` | `names` |
+| `case-config-upper` | `/CHECKCONFIG` | `check-config-base` | `/CheckConfig` | `names` |
+| `case-config-handlers-lower` | `-handlersexistence` | `check-config-handlers` | `-HandlersExistence` | `tail` |
+| `case-config-handlers-upper` | `-HANDLERSEXISTENCE` | `check-config-handlers` | `-HandlersExistence` | `tail` |
+| `case-config-extended-lower` | `-extendedmodulescheck` | `check-config-extended` | `-ExtendedModulesCheck` | `tail` |
+| `case-config-extended-upper` | `-EXTENDEDMODULESCHECK` | `check-config-extended` | `-ExtendedModulesCheck` | `tail` |
+| `case-load-cmd-lower` | `/loadconfigfromfiles` | `load-ok` | `/LoadConfigFromFiles` | `names` |
+| `case-listfile-lower` | `-listfile` | `load-listfile-ok` | `-listFile` | `tail` |
+| `case-format-lower` | `-format` | `load-format-flag` | `-Format` | `tail` |
+
+### Результат
+
+Два прогона, по одному 1С-процессу за раз, оба закончились кодом возврата контура 0 (сам артефакт
+поля `exit_code` не содержит — код наблюдали мы в терминале):
+
+| артефакт | лестница | шагов | двойников | ИБ | `case_discipline_ok` | `case_differs_from_twin` |
+|---|---|---|---|---|---|---|
+| `reports/flags-26-casecheck.json` | `CASECHECK_LADDER` | 25 | 8 | `<tmp>\p1c_effektivnost\broken_ib_form` (преднамеренно битая form-ИБ) | true | [] |
+| `reports/flags-26-caseload.json` | `CASELOAD_LADDER` | 12 | 3 | `<tmp>\p1c_effektivnost\probe_ib` (отдельная временная ИБ, `--allow-mutating`) | true | [] |
+
+**Ни один из 11 двойников не отличается от своего близнеца.** `case_same_as_twin` содержит все 11
+имён, `case_differs_from_twin = []`: код, класс исхода, длина `/Out` и число строк объекта у двойника
+и близнеца совпали побайтово. На битой form-ИБ: `/CheckModules` во всех трёх написаниях — код 0,
+73 байта, `Синтаксических ошибок не обнаружено!`, 0 строк объекта; `/CheckConfig` в трёх написаниях —
+код 0, 43 байта, `Ошибок не обнаружено`; `-HandlersExistence`, `-handlersexistence` и
+`-HANDLERSEXISTENCE` — код 101, 195 байт, одна строка объекта; `-ExtendedModulesCheck` и его два
+регистровых написания — код 101, 532 байта, 3 строки объекта (дословные строки `/Out` — в таблицах
+раздела 13). На форме загрузки: `/LoadConfigFromFiles` и `/loadconfigfromfiles` — код 0, 3 байта;
+`-listFile` и `-listfile` с файлом-списком — код 0, 3 байта; `-Format` и `-format` — код 0, 3 байта.
+Шаги загрузки шли после `load-ok`, то есть сравнивались на ИБ, куда конфигурация уже загружена;
+исход тех же шагов на восстанавливаемой ИБ разобран ниже.
+
+Единственный «говорящий» шаг caseload-лестницы — `load-listfile-onefile`: `-listFile
+Configuration.xml`, где вместо пути к файлу-списку подставлено голое имя `Configuration.xml`. В
+рабочей директории прогона файла с таким именем нет (сверено), в каталоге конфигурации он есть. Исход:
+код 1, 90 байт, дословно `Ошибка чтения файла-списка загружаемых файлов`; по этому сообщению
+нельзя определить, что именно платформа сочла нечитаемым — отсутствующий файл или его содержимое.
+Шаг стоит в лестнице как сосед, а не как двойник: регистрового двойника у него нет.
+
+Этот же шаг поправляет прочтение прошлых замеров. Код 1 и 337 байт у `-listFile <файл-список>` и
+`-Format` в четырёх LOADOPTS-артефактах (`reports/effect-16-loadopts-{fresh,fresh2,fresh3,full}.json`)
+— отказ частичной загрузки из-за несовпадения идентификаторов: перед этими шагами ИБ восстанавливают,
+и её сохранённый идентификатор не совпадает с идентификатором загружаемой конфигурации (§5 и §10
+`docs/evidence/modifier-effects.md`). Полная загрузка тем же прогоном при этом проходит: `load-ok`
+даёт код 0 и 3 байта. На ИБ, куда та же конфигурация уже загружена
+(`reports/effect-16-loadopts-shared.json`, `reports/flags-26-caseload.json`), те же шаги дают код 0
+и 3 байта. От состояния ИБ не зависит только исход `load-listfile-onefile`: 1 и 90 байт во всех пяти
+LOADOPTS-артефактах и в caseload-прогоне.
+
+Три оговорки, без которых вывод читается шире, чем он есть.
+
+1. **Различимость измерялась только по вердикту, не по следу программы.** Для этих двух лестниц
+   BSL-программа не пишется и не исполняется (`needs_script` для шагов группы проверки и загрузки
+   ложен): `script_bytes 0`, `marker_exists false` у всех 37 шагов, `executed_variants = []`.
+   Совпадение двойника и близнеца доказано кодом возврата, байтами `/Out` и строками объекта.
+2. **Закрыт только регистр написания имени, а не регистр значения.** `-Format PLAIN` против
+   `-Format Plain`, регистр значений `-ReportFormat`/`-ReportType` — не измерены.
+3. **11 двойников — это 11 написаний из 426.** Остальные имена таблицы регистровых двойников не
+   имели; регистр BSL-аннотаций (`&НаСервереБезКонтекста` против `&НаСервереБезконтекста`) к этому
+   замеру отношения не имеет — он про argv командной строки.
+
+**Следствие для `p1c`.** Платформа 8.3.27.1606 не различает регистр написания имени команды и имени
+флага в argv: ни в группе проверки (4 имени, 8 написаний), ни в форме загрузки (3 имени, 3
+строчных написания) наблюдаемой разницы нет. Значит `p1c` не может пользоваться разницей написаний
+как признаком чего-либо — и не должен хранить два написания как два разных флага (пункт F6 плана
+решается в пользу «зафиксировать одно написание»: измеренное `-listFile`, `/CheckConfig`,
+`/CheckModules`). Проверять регистронезависимость тестом `p1c` нечем: единственный наблюдаемый
+канал — код и `/Out`, а в них разницы нет.
+
+## 13. Дословные таблицы прогонов
 
 Таблицы собраны генератором `exec_tables.py` (одноразовый скрипт вне репозитория) из
 тех же отчётов, из которых собран текст выше; в колонке `маркер BSL` стоит `нет`, если
@@ -369,7 +502,11 @@ headless-проверки отчёт идёт только в `/Out`; `-ReportFo
 (`check-25-*.json`) собраны вторым генератором — `gen_check_tables.py` (также вне
 репозитория): там колонка `вердикт` печатает `check_verdict` из `scripts/exec_probe.py`,
 колонка `строк объекта` считает строки `ВидОбъекта.ИмяОбъекта`, а колонка `токен шага`
-показывает ровно тот один токен, которым шаг отличается от предыдущего.
+показывает ровно тот один токен, которым шаг отличается от предыдущего. Таблицы двух лестниц
+замера 26 (`flags-26-*.json`) собраны третьим генератором — `case_tables.py` (тоже вне
+репозитория): в колонке `изменённый токен` там стоит часть команды (`names` или `tail`),
+повтор близнеца помечен как обычный шаг той же части, а колонка `совпадение` печатает вывод
+`case_twin_comparison` — `совпал` либо `ОТЛИЧАЕТСЯ`.
 
 ### exec-12-programs.json — формы запуска: /RunScript с разными написаниями скрипта
 - `executed_variants` = []
@@ -877,6 +1014,133 @@ headless-проверки отчёт идёт только в `/Out`; `-ReportFo
   - `Обработка.ВыгрузкаЗатратCSV`
   - `Справочник.Сотрудники`
 
+### flags-26-casecheck.json — лестница CASECHECK_LADDER: 25 шагов (9 предсказаний: 6 подтверждены, 3 опровергнуты), 8 регистровых двойников имён группы проверки, на преднамеренно битой form-ИБ
+- лестница: CASECHECK_LADDER, шагов: 25, один токен на шаг: True, дисциплина двойников: True, шагов с записанной BSL-программой: 0, шагов с появившимся маркером: 0
+- поле `exit_code` в артефакте отсутствует; код возврата контура этих прогонов мы наблюдали в терминале (он приведён в тексте раздела 12)
+- `case_differs_from_twin` = []
+- `case_discipline_ok` = true
+- `case_prediction_free` = true
+- `case_same_as_twin` = ["case-config-extended-lower", "case-config-extended-upper", "case-config-handlers-lower", "case-config-handlers-upper", "case-config-lower", "case-config-upper", "case-modules-lower", "case-modules-upper"]
+- `case_spelling_pairs` = {"case-modules-lower": {"twin": "check-modules-base", "part": "names", "spelling_case": "/checkmodules", "spelling_measured": "/CheckModules", "differs_by": ["names"], "changed_tokens": [{"part": "names", "position": 0, "from": "/checkmodules", "to": "/CheckModules"}], "register_only": true}, "case-modules-upper": {"twin": "check-modules-base", "part": "names", "spelling_case": "/CHECKMODULES", "spelling_measured": "/CheckModules", "differs_by": ["names"], "changed_tokens": [{"part": "names", "position": 0, "from": "/CHECKMODULES", "to": "/CheckModules"}], "register_only": true}, "case-config- …(обрезано)
+- `case_spelling_register_only` = true
+- `case_twin_adjacency_problems` = []
+- `case_twin_comparison` = {"case-modules-lower": {"twin": "check-modules-base", "code": 0, "twin_code": 0, "outcome": [0, false, "непустой"], "twin_outcome": [0, false, "непустой"], "same_code": true, "same_outcome": true, "verdict": "clean", "twin_verdict": "clean"}, "case-modules-upper": {"twin": "check-modules-base", "code": 0, "twin_code": 0, "outcome": [0, false, "непустой"], "twin_outcome": [0, false, "непустой"], "same_code": true, "same_outcome": true, "verdict": "clean", "twin_verdict": "clean"}, "case-config-lower": {"twin": "check-config-base", "code": 0, "twin_code": 0, "outcome": [0, false, "непустой"], "t …(обрезано)
+- `case_unpredicted_matches_list` = true
+- `case_variants_run` = ["case-modules-lower", "case-modules-upper", "case-config-lower", "case-config-upper", "case-config-handlers-lower", "case-config-handlers-upper", "case-config-extended-lower", "case-config-extended-upper"]
+
+| шаг | изменённый токен | код | вердикт | сек | байт в /Out | строк объекта | исход |
+|---|---|---|---|---|---|---|---|
+| `check-modules-base` | `names` | 0 | clean | 25.5 | 73 | 0 | 0/без зависания/непустой |
+| `case-modules-lower` | `names` | 0 | clean | 5.1 | 73 | 0 | 0/без зависания/непустой |
+| `check-modules-base` | `names` | 0 | clean | 5.1 | 73 | 0 | 0/без зависания/непустой |
+| `case-modules-upper` | `names` | 0 | clean | 5.1 | 73 | 0 | 0/без зависания/непустой |
+| `check-modules-base` | `names` | 0 | clean | 5.1 | 73 | 0 | 0/без зависания/непустой |
+| `check-config-base` | `names` | 0 | clean | 5.1 | 43 | 0 | 0/без зависания/непустой |
+| `case-config-lower` | `names` | 0 | clean | 5.1 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-base` | `names` | 0 | clean | 5.1 | 43 | 0 | 0/без зависания/непустой |
+| `case-config-upper` | `names` | 0 | clean | 5.0 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-base` | `names` | 0 | clean | 4.1 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-configlog` | `tail` | 0 | clean | 5.1 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-references` | `tail` | 0 | clean | 4.1 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-distributive` | `tail` | 0 | clean | 5.1 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-unreferenced` | `tail` | 0 | clean | 5.1 | 43 | 0 | 0/без зависания/непустой |
+| `check-config-handlers` | `tail` | 101 | defects | 5.1 | 195 | 1 | 101/без зависания/непустой |
+| `case-config-handlers-lower` | `tail` | 101 | defects | 5.1 | 195 | 1 | 101/без зависания/непустой |
+| `check-config-handlers` | `tail` | 101 | defects | 5.1 | 195 | 1 | 101/без зависания/непустой |
+| `case-config-handlers-upper` | `tail` | 101 | defects | 4.1 | 195 | 1 | 101/без зависания/непустой |
+| `check-config-handlers` | `tail` | 101 | defects | 5.1 | 195 | 1 | 101/без зависания/непустой |
+| `check-config-emptyhandlers` | `tail` | 101 | defects | 4.0 | 195 | 1 | 101/без зависания/непустой |
+| `check-config-extended` | `tail` | 101 | defects | 5.1 | 532 | 3 | 101/без зависания/непустой |
+| `case-config-extended-lower` | `tail` | 101 | defects | 5.1 | 532 | 3 | 101/без зависания/непустой |
+| `check-config-extended` | `tail` | 101 | defects | 5.1 | 532 | 3 | 101/без зависания/непустой |
+| `case-config-extended-upper` | `tail` | 101 | defects | 4.1 | 532 | 3 | 101/без зависания/непустой |
+| `check-config-extended` | `tail` | 101 | defects | 5.1 | 532 | 3 | 101/без зависания/непустой |
+
+| двойник | написание двойника | близнец | измеренное написание | часть | код двойника | код близнеца | вердикт двойника | вердикт близнеца | совпадение |
+|---|---|---|---|---|---|---|---|---|---|
+| `case-modules-lower` | `/checkmodules` | `check-modules-base` | `/CheckModules` | names | 0 | 0 | clean | clean | совпал |
+| `case-modules-upper` | `/CHECKMODULES` | `check-modules-base` | `/CheckModules` | names | 0 | 0 | clean | clean | совпал |
+| `case-config-lower` | `/checkconfig` | `check-config-base` | `/CheckConfig` | names | 0 | 0 | clean | clean | совпал |
+| `case-config-upper` | `/CHECKCONFIG` | `check-config-base` | `/CheckConfig` | names | 0 | 0 | clean | clean | совпал |
+| `case-config-handlers-lower` | `-handlersexistence` | `check-config-handlers` | `-HandlersExistence` | tail | 101 | 101 | defects | defects | совпал |
+| `case-config-handlers-upper` | `-HANDLERSEXISTENCE` | `check-config-handlers` | `-HandlersExistence` | tail | 101 | 101 | defects | defects | совпал |
+| `case-config-extended-lower` | `-extendedmodulescheck` | `check-config-extended` | `-ExtendedModulesCheck` | tail | 101 | 101 | defects | defects | совпал |
+| `case-config-extended-upper` | `-EXTENDEDMODULESCHECK` | `check-config-extended` | `-ExtendedModulesCheck` | tail | 101 | 101 | defects | defects | совпал |
+
+### Строки вывода двойников и их близнецов (дословно, первые 6 на шаг)
+- `case-modules-lower`: код 0, 73 байт, консоль 0/0 байт; близнец `check-modules-base`: код 0, 73 байт
+  - двойник, /Out: Синтаксических ошибок не обнаружено!
+  - близнец, /Out: Синтаксических ошибок не обнаружено!
+- `case-modules-upper`: код 0, 73 байт, консоль 0/0 байт; близнец `check-modules-base`: код 0, 73 байт
+  - двойник, /Out: Синтаксических ошибок не обнаружено!
+  - близнец, /Out: Синтаксических ошибок не обнаружено!
+- `case-config-lower`: код 0, 43 байт, консоль 0/0 байт; близнец `check-config-base`: код 0, 43 байт
+  - двойник, /Out: Ошибок не обнаружено
+  - близнец, /Out: Ошибок не обнаружено
+- `case-config-upper`: код 0, 43 байт, консоль 0/0 байт; близнец `check-config-base`: код 0, 43 байт
+  - двойник, /Out: Ошибок не обнаружено
+  - близнец, /Out: Ошибок не обнаружено
+- `case-config-handlers-lower`: код 101, 195 байт, консоль 0/0 байт; близнец `check-config-handlers`: код 101, 195 байт
+  - двойник, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+  - близнец, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+- `case-config-handlers-upper`: код 101, 195 байт, консоль 0/0 байт; близнец `check-config-handlers`: код 101, 195 байт
+  - двойник, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+  - близнец, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+- `case-config-extended-lower`: код 101, 532 байт, консоль 0/0 байт; близнец `check-config-extended`: код 101, 532 байт
+  - двойник, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+  - двойник, /Out: Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"
+  - двойник, /Out: Обработка.ВыгрузкаЗатратCSV.Форма.ФормаВыгрузки.Форма Возможно ошибочный метод: "СформироватьТекстВыгрузки"
+  - близнец, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+  - близнец, /Out: Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"
+  - близнец, /Out: Обработка.ВыгрузкаЗатратCSV.Форма.ФормаВыгрузки.Форма Возможно ошибочный метод: "СформироватьТекстВыгрузки"
+- `case-config-extended-upper`: код 101, 532 байт, консоль 0/0 байт; близнец `check-config-extended`: код 101, 532 байт
+  - двойник, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+  - двойник, /Out: Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"
+  - двойник, /Out: Обработка.ВыгрузкаЗатратCSV.Форма.ФормаВыгрузки.Форма Возможно ошибочный метод: "СформироватьТекстВыгрузки"
+  - близнец, /Out: Справочник.Сотрудники.Форма.ФормаЭлемента.Форма Отсутствует обработчик:  Форма "ПриСозданииНаСервере"
+  - близнец, /Out: Документ.ФактРаботы.МодульОбъекта Возможно ошибочный метод: "Заполнять"
+  - близнец, /Out: Обработка.ВыгрузкаЗатратCSV.Форма.ФормаВыгрузки.Форма Возможно ошибочный метод: "СформироватьТекстВыгрузки"
+
+### flags-26-caseload.json — лестница CASELOAD_LADDER: 12 шагов (2 предсказания: оба подтверждены), 3 регистровых двойника формы загрузки, на отдельной временной ИБ (--allow-mutating)
+- лестница: CASELOAD_LADDER, шагов: 12, один токен на шаг: True, дисциплина двойников: True, шагов с записанной BSL-программой: 0, шагов с появившимся маркером: 0
+- поле `exit_code` в артефакте отсутствует; код возврата контура этих прогонов мы наблюдали в терминале (он приведён в тексте раздела 12)
+- `case_differs_from_twin` = []
+- `case_discipline_ok` = true
+- `case_prediction_free` = true
+- `case_same_as_twin` = ["case-format-lower", "case-listfile-lower", "case-load-cmd-lower"]
+- `case_spelling_pairs` = {"case-load-cmd-lower": {"twin": "load-ok", "part": "names", "spelling_case": "/loadconfigfromfiles", "spelling_measured": "/LoadConfigFromFiles", "differs_by": ["names"], "changed_tokens": [{"part": "names", "position": 0, "from": "/loadconfigfromfiles", "to": "/LoadConfigFromFiles"}], "register_only": true}, "case-listfile-lower": {"twin": "load-listfile-ok", "part": "tail", "spelling_case": "-listfile", "spelling_measured": "-listFile", "differs_by": ["tail"], "changed_tokens": [{"part": "tail", "position": 0, "from": "-listfile", "to": "-listFile"}], "register_only": true}, "case-format-lo …(обрезано)
+- `case_spelling_register_only` = true
+- `case_twin_adjacency_problems` = []
+- `case_twin_comparison` = {"case-load-cmd-lower": {"twin": "load-ok", "code": 0, "twin_code": 0, "outcome": [0, false, "пустой"], "twin_outcome": [0, false, "пустой"], "same_code": true, "same_outcome": true}, "case-listfile-lower": {"twin": "load-listfile-ok", "code": 0, "twin_code": 0, "outcome": [0, false, "пустой"], "twin_outcome": [0, false, "пустой"], "same_code": true, "same_outcome": true}, "case-format-lower": {"twin": "load-format-flag", "code": 0, "twin_code": 0, "outcome": [0, false, "пустой"], "twin_outcome": [0, false, "пустой"], "same_code": true, "same_outcome": true}}
+- `case_unpredicted_matches_list` = true
+- `case_variants_run` = ["case-load-cmd-lower", "case-listfile-lower", "case-format-lower"]
+
+| шаг | изменённый токен | код | вердикт | сек | байт в /Out | строк объекта | исход |
+|---|---|---|---|---|---|---|---|
+| `load-ok` | `names` | 0 | clean | 9.1 | 3 | 0 | 0/без зависания/пустой |
+| `case-load-cmd-lower` | `names` | 0 | clean | 6.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-ok` | `names` | 0 | clean | 6.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-files-flag` | `tail` | 0 | clean | 6.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-files-onefile` | `tail` | 0 | clean | 7.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-listfile-onefile` | `tail` | 1 | refused | 4.1 | 90 | 0 | 1/без зависания/непустой |
+| `load-listfile-ok` | `tail` | 0 | clean | 7.1 | 3 | 0 | 0/без зависания/пустой |
+| `case-listfile-lower` | `tail` | 0 | clean | 6.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-listfile-ok` | `tail` | 0 | clean | 7.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-format-flag` | `tail` | 0 | clean | 6.1 | 3 | 0 | 0/без зависания/пустой |
+| `case-format-lower` | `tail` | 0 | clean | 6.1 | 3 | 0 | 0/без зависания/пустой |
+| `load-format-flag` | `tail` | 0 | clean | 6.2 | 3 | 0 | 0/без зависания/пустой |
+
+| двойник | написание двойника | близнец | измеренное написание | часть | код двойника | код близнеца | вердикт двойника | вердикт близнеца | совпадение |
+|---|---|---|---|---|---|---|---|---|---|
+| `case-load-cmd-lower` | `/loadconfigfromfiles` | `load-ok` | `/LoadConfigFromFiles` | names | 0 | 0 | — | — | совпал |
+| `case-listfile-lower` | `-listfile` | `load-listfile-ok` | `-listFile` | tail | 0 | 0 | — | — | совпал |
+| `case-format-lower` | `-format` | `load-format-flag` | `-Format` | tail | 0 | 0 | — | — | совпал |
+
+### Строки вывода двойников и их близнецов (дословно, первые 6 на шаг)
+- `case-load-cmd-lower`: код 0, 3 байт, консоль 0/0 байт; близнец `load-ok`: код 0, 3 байт
+- `case-listfile-lower`: код 0, 3 байт, консоль 0/0 байт; близнец `load-listfile-ok`: код 0, 3 байт
+- `case-format-lower`: код 0, 3 байт, консоль 0/0 байт; близнец `load-format-flag`: код 0, 3 байт
+
 ## Что с этим делать (сводный список плана оптимизации p1c)
 
 1. В `src/p1c/test/run.py` — не выбрасывать stdout процесса и собирать argv без битой склейки;
@@ -899,3 +1163,9 @@ headless-проверки отчёт идёт только в `/Out`; `-ReportFo
 8. Не полагаться на отчёт проверки как на канал вывода: `-ReportFile` запросили 84 раза (14 шагов из
    22 на каждой из шести лестниц) — файл не появился ни разу (`check_report_files = []`);
    единственный наблюдаемый канал вердикта — `/Out`.
+9. Не делать в `p1c` двух разных флагов из двух написаний одного имени: 11 регистровых двойников
+   (`/checkmodules`, `/CHECKMODULES`, `/checkconfig`, `/CHECKCONFIG`, `-handlersexistence`,
+   `-HANDLERSEXISTENCE`, `-extendedmodulescheck`, `-EXTENDEDMODULESCHECK`,
+   `/loadconfigfromfiles`, `-listfile`, `-format`) совпали со своими близнецами по коду, байтам
+   `/Out` и строкам объекта — платформа регистр написания не различает, поэтому в документации и
+   справочниках `p1c` надо держать одно измеренное написание (пункт F6 плана).
