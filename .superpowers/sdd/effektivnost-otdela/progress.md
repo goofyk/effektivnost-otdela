@@ -259,8 +259,8 @@
   &КонПериод, , <отбор>) КАК <Alias>` + `СУММА(<Alias>.<Ресурс>) КАК <Имя>` + явное
   `СГРУППИРОВАТЬ ПО`; текст запроса — единой строкой с переводом через `|`; подзапросов в `FROM`
   нет (только `ПОМЕСТИТЬ вт…` / `УНИЧТОЖИТЬ вт…`).
-- Наблюдение (канон CSV-выгрузки из формы, образец `ERP/Catalogs/Новости/Forms/
-  ФормаЭкспортаОбъектаВXML/Ext/Form/Module.bsl`): `&НаКлиенте` +
+- Наблюдение (канон CSV-выгрузки из формы, образец `ERP/Catalogs/Новости/Forms/`
+  `ФормаЭкспортаОбъектаВXML/Ext/Form/Module.bsl`): `&НаКлиенте` +
   `Новый ДиалогВыбораФайла(РежимДиалогаВыбораФайла.Сохранение)` +
   `Новый ОписаниеОповещения("ПослеВыбораФайла", ЭтотОбъект, ДопПараметры)` + форма с проверкой
   `ТипЗнч(…) = Тип("Массив")` + `Новый ЗаписьТекста(ИмяФайла, "UTF-8", Символы.ПС, Ложь,
@@ -912,8 +912,8 @@
   `rights` дословными строками. Предопределённые данные: ключ `"<вид>.<имя>"` (та же форма, что у
   `objects`), `items` — плоский список `<Item>` с `parent`, `uuid` из атрибута `id`, `code` дословно
   (ведущие нули), `description`, `is_folder`.
-- Дескриптор `Roles/<Имя>.xml` не читается; фолбэка на `Roles/<Имя>/Rights.xml` (без `Ext/`) не
-  добавлено; `detect_layout` не менялся.
+- Дескриптор `Roles/<Имя>.xml` не читается; запасного чтения через `Roles/<Имя>/Rights.xml` (без
+  `Ext/`) не добавлено; `detect_layout` не менялся.
 - RED `0172da1` — 18 красных проверок в `tests/load/test_rights_predefined.py`; GREEN `b1554bf` —
   `parse_rights_xml`, `parse_predefined_xml`, `_read_predefined_items`, вставки в
   `load_configuration_model`, две формы записей в docstring модуля, `roles` и `predefined_data` в
@@ -1042,3 +1042,157 @@ PREDICTED (записаны до прогона, не переписываютс
   (полный обход корпусов, только вне окон 1С-замеров); A3–A6 — подсистемы, языки, макеты компоновки
   данных и модули уровня конфигурации; чтение дескрипторов `Roles/<Имя>.xml` (класс `role` по пути
   файла по-прежнему не закрыт).
+
+## Итерация 12 (гейт `gate-15`: пересчёт `tool_blind_kinds` живым читателем)
+
+Поправка к предыдущей записи: `gate-15` обхода корпусов не требует. `scripts/gate.py:366-371` считает
+`tool_counts_source` читателем `p1c.load` (через `scripts/counts.py:object_counts`) и
+`tool_blind_kinds = layout_source − tool_counts_source` по одному исходнику `cfg`; корпуса в этом
+расчёта нет. Цена — один цикл платформы (шаги `load`, `check`, `dump`).
+
+Исходные данные до прогона (замерены, не вывод): `cfg` — 31 файл, свежайший файл 2026-10-28 15:02,
+то есть с прогона `gate-14` (шаги `load` 14.2 с, `check` 2.0 с, `dump` 2.0 с) исходник не менялся;
+`ib_ready_before` прежнего прогона — `true`; выгрузка — 32 файла.
+
+PREDICTED (записаны до прогона, после прогона не переписываются):
+
+1. Код возврата 0, артефакт `reports/gate-15.json`, `reason` пустой, `step_problems` и
+   `diagnostic_findings` пустые.
+2. Шагов ровно три (`load`, `check`, `dump`), `create` отсутствует (ИБ существует), `create_code`
+   остаётся `null`; коды всех трёх шагов 0.
+3. `metadata.layout` (он же `layout_source`) — побайтово те же 22 класса и те же числа, что в
+   `gate-14.json` (в частности `role 2`, `role_rights 2`, `predefined_data 1`, `files 31`);
+   `expected_mismatch` пуст, `hard_problems` пуст.
+4. `rights` — код 0, счётчики `rights_files 2`, `object_blocks 17`, `rights 79`;
+   `rights_immobility` — код 0, `dropped []`, `added []`, 17/17 блоков и 79/79 прав.
+5. `tool_counts_source` — 12 ключей вместо 10: прежние 10 ключей с прежними значениями (включая
+   `form_data 2`) плюс `predefined_data 1` и `role_rights 2`. Причина: `scripts/counts.py` выдаёт эти
+   две пары из ключей модели `roles` и `predefined_data`, а имя `role` не выдаёт.
+6. `tool_blind_kinds` — 10 классов вместо 12: `bsl_module`, `files`, `form_descriptor`,
+   `form_module`, `language`, `object_module`, `report_template`, `report_template_data`, `role`,
+   `subsystem`. Причина: из прежних 12 вычитаются `predefined_data` и `role_rights`, которые теперь
+   названы читателем.
+7. `tool_counts_dump` — тоже 12 ключей с `predefined_data 1` и `role_rights 2`: в выгрузке те же два
+   `Roles/*/Ext/Rights.xml` и один `Catalogs/Сотрудники/Ext/Predefined.xml`.
+8. `dump_files 32`, `dump_fresh_files 32`; `diff_files` по составу как в `gate-14.json` (исходник не
+   менялся): `Catalogs/Сотрудники/Ext/Predefined.xml` в `same`, оба `Roles/*/Ext/Rights.xml` в
+   `reordered`.
+9. Нормализованный JSON `gate-15.json` против `gate-14.json` различается ровно четырьмя местами:
+   `steps` (начало и длительность), `tool_counts_source`, `tool_counts_dump`, `tool_blind_kinds`.
+   Побайтового равенства, как у `gate-11` … `gate-14`, не будет: отчёт стал длиннее на эти два ключа.
+10. После этого `probe/tool_coverage.py:56 GATE_ARTIFACT` указывает на устаревший артефакт, и
+    предсказание про матрицу: при `GATE_ARTIFACT = "gate-15.json"` `reader_vs_gate` для обоих
+    модельных прогонов даст `equal_to_gate_tool_counts_source: true` и пустой
+    `diff_reader_vs_gate`, а `gate_tool_blind_kinds` станет 10; остальные числа матрицы
+    (7 / 12 / 3 из 22) не изменятся, потому что матрица считается прогонами инструментов, а не
+    гейтом.
+### Итерация 12: фактический исход
+
+Команда (один 1С-прогон, 2026-10-29 21:20): `python scripts/gate.py --cfg
+"cfg/ЭффективностьОтдела" --out reports/gate-15.json --canon docs/canonical-rights.json
+--timeout 240` — код возврата 0, артефакт `reports/gate-15.json` (8180 байт, mtime 21:20:14).
+Все 10 предсказаний подтверждены.
+
+1. Подтверждено: код 0, `reason ""`, `step_problems []`, `diagnostic_findings []`.
+2. Подтверждено: три шага `load` / `check` / `dump` (код 0 у каждого), `create_code null`,
+   `ib_ready_before true`.
+3. Подтверждено: блоки `metadata`, `layout_source`, `layout_dump`, `layout_compare` побайтово равны
+   `gate-14.json` (22 класса, `role 2`, `role_rights 2`, `predefined_data 1`, `files 31`);
+   `expected_mismatch {}`, `hard_problems {}`.
+4. Подтверждено: `rights.code 0` (`rights_files 2`, `object_blocks 17`, `rights 79`);
+   `rights_immobility` — код 0, `dropped []`, `added []`, 17/17 блоков и 79/79 прав.
+5. Подтверждено: `tool_counts_source` — 12 ключей: прежние 10 с прежними значениями (включая
+   `form_data 2`) плюс `predefined_data 1` и `role_rights 2`; имени `role` в счётчике нет.
+6. Подтверждено: `tool_blind_kinds` — 10 классов: `bsl_module`, `files`, `form_descriptor`,
+   `form_module`, `language`, `object_module`, `report_template`, `report_template_data`, `role`,
+   `subsystem`.
+7. Подтверждено: `tool_counts_dump` — 12 ключей, равный `tool_counts_source` по составу.
+8. Подтверждено: `dump_files 32`, `dump_fresh_files 32`, `diff_files` побайтово равен прежнему
+   (`same` 21 файла, `differ` 8, `reordered` 2, `platform_added` 1 — `ConfigDumpInfo.xml`,
+   `only_source []`, `only_dump []`).
+9. Подтверждено: отличающихся ключа ровно четыре — `steps`, `tool_counts_source`,
+   `tool_counts_dump`, `tool_blind_kinds`; побайтового равенства с `gate-14.json` нет
+   (8180 байт против 8125).
+10. Подтверждено: после смены `GATE_ARTIFACT` на `gate-15.json` повтор матрицы (18 прогонов восьми
+    инструментов, платформа 1С не запускалась, код 0) даёт `gate_tool_counts_source` 12 и
+    `gate_tool_blind_kinds` 10, а `reader_vs_gate` у обоих модельных прогонов —
+    `equal_to_gate_tool_counts_source: true` с пустым `diff_reader_vs_gate`. Числа матрицы не
+    изменились: 22 класса = 7 по пути файла + 12 только по имени + 3 ничем (`language`,
+    `report_template`, `report_template_data`); `reader_kind_counts` — 12 классов в обоих модельных
+    прогонов.
+
+Непредсказанное (записано как наблюдение, не как подтверждение):
+
+- Длительность шага `load` 6.0 с против 14.2 с в `gate-14.json` при тех же 3 байтах stdout;
+  `check` и `dump` — те же 2.0 с и 2.0 с (73 байта и 3 байта). Причина различия длительности не
+  измерена.
+- Перенаправление консоли PowerShell в файл даёт UTF-16LE: текст консоли при декодировании как UTF-8
+  даёт mojibake, поэтому читать надо артефакт JSON (`reports/gate-15.json`), а не файл консоли; код
+  возврата при этом читается по переменной `$LASTEXITCODE`.
+
+Проверка гейта и замер матрицы:
+
+- Артефакт читался скриптом-сверкой (`<tmp>\opencode\gate15_report.py`, `<tmp>\opencode\gate15_keys.py`),
+  который сравнил `gate-15.json` с `gate-14.json` по всем ключам отчёта. Побайтово равны 23 ключа:
+  `cfg_name`, `check_code`, `create_code`, `diagnostic_findings`, `diagnostics`,
+  `diagnostics_by_step`, `diff_files`, `dump_configuration_name`, `dump_files`, `dump_fresh_files`,
+  `expected_file`, `ib_ready_before`, `layout_compare`, `layout_dump`, `layout_source`, `load_code`,
+  `metadata`, `reason`, `rights`, `rights_immobility`, `source_configuration_name`, `step_problems`,
+  `tool_counts_error`. Отличаются ровно 4: `steps`, `tool_counts_source`, `tool_counts_dump`,
+  `tool_blind_kinds`.
+- `probe/tool_coverage.py:56` — изменена только константа `GATE_ARTIFACT` (плюс комментарий о том,
+  что `gate-14.json` остаётся прежним артефактом того же гейта); артефакт замера теперь
+  `reports/toolcov_runs.json` с `gate_artifact gate-15.json`.
+- `python probe/render_query_tables.py` (без флагов) переснял `reports/query-tables.md`: 28
+  фрагментов, 732 строки. Изменились ровно 5 строк фрагмента `OUT coverage-reconcile` — ярлык
+  артефакта, `gate_tool_counts_source` (10 → 12 классов), `gate_tool_blind_kinds` (12 → 10) и обе
+  строки `reader_vs_gate` (`false` с 2 различиями → `true` с пустым различием). Прежняя копия —
+  `<tmp>\opencode\query_tables_before.md`.
+
+Правки документов (строки матрицы переносились вручную: маркеров фрагментов в документах нет, а
+`--fix` у генератора нет):
+
+- `docs/evidence/tool-coverage.md`: строка 16 (артефакты замера — `gate-15.json` и пояснение, что
+  `gate-14.json` это тот же гейт по тому же исходнику, посчитанный читателем до правок A1/A2); блок
+  §5 (7 строк заменены дословно, по содержанию среди них отличаются 5); проза §5 (сверка читателя с
+  гейтом сошлась, прежняя сверка против `gate-14.json` сохранена как запись прогона, слепых классов
+  по гейту 10, числа прав — те же, что в `gate-14.json`, и названа причина); пункт 5 §10 (12 классов
+  у читателя и те же 12 в счётчике гейта); §11 (строка таблицы `reader_vs_gate`, абзац про отставание
+  артефакта заменён записью прогона `gate-15.json` с длительностями шагов и с исправлением прежней
+  причины — обхода корпусов гейт не делает, эти величины считаются по одному исходнику `cfg` через
+  `scripts/counts.py`; добавлен «Статус к итерации 12»); §12 (артефакты, соответствующие матрице:
+  `reports/gate-15.json`, прежний `gate-14.json` не перезаписывался). Строка 777 с историческим
+  прогоном `&Сервер` (`reports/gate-14.json даёт код 0`) не менялась: это запись того прогона.
+- `docs/слепые-пятна.md`: статус перенумерован на итерацию 12; запись про `tool_blind_kinds` = 12
+  дополнена фактом `gate-15.json` = 10; абзац §1 про независимые числа гейта переписан (12 в
+  `gate-14.json`, 10 в `gate-15.json`, полная слепота 7 классов до правок и 3 после).
+- `docs/итог-боевой-проверки.md`: статус к итерации 12 (сверка читателя с гейтом разошлась против
+  `gate-14.json` и сошлась против `gate-15.json`); добавлен блок чисел `gate-15.json` и запись о
+  четырёх отличающихся ключах и о том, что побайтового равенства `gate-11` … `gate-14` с `gate-15`
+  нет; ссылка на `layout_source` расширена до `gate-15.json`; в разделе про покрытия числа 12 и 7
+  сохранены как запись прогона до правок и добавлены 10 из `gate-15.json` с 7 / 12 / 3 после правок;
+  абзац про права дополнен тем, что после правки A1 читатель называет `role_rights` и те же 17 блоков
+  и 79 прав, а контроль неподвижности по-прежнему исполняет `scripts/rights.py`.
+- `docs/план-оптимизации-p1c.md`: «Статус блока A к итерации 11» заменён на «Статус блока A к
+  итерации 12» с фактом `tool_blind_kinds` 12 → 10 по артефакту `gate-15.json` (вместо «осталось бы
+  10»); в таблице блока G колонка «сейчас» обновлена (10 / 3 / 7 / 12 с прежними числами в скобках);
+  в строках A5 и F3 прежние числа помечены как запись замеренного прогона.
+
+Что не тронуто сознательно: `scripts/exec_probe.py` (запись `check-modules-base` с
+`source: "reports/gate-14.json"`) и `tests/test_exec_probe.py:947` — `gate-14.json` остаётся
+источником прежнего утверждения о коде 0; менять его в этой итерации означало бы переписать прежнее
+доказательство.
+
+Что не делалось: обходов корпусов не было; модифицирующих вариантов к гейт-ИБ
+(`<tmp>\p1c_effektivnost\ib`) не применялось — только шаги гейта `load` / `check` / `dump`,
+`--allow-mutating` не использовался; `cfg` (31 файл) не менялся.
+
+Отложенная работа: A3–A6 (`subsystems`, `languages`, `session_parameters`, `templates`, модули уровня
+конфигурации) и чтение дескрипторов `Roles/<Имя>.xml` — класс `role` в `gate-15.json` остаётся среди
+10 слепых классов: матрица закрывает его только именем сущности, пути файла `Roles/<Имя>.xml` никто
+не называет.
+
+Попутно в этом журнале поправлены две формулировки прежних записей: путь образца формы записан двумя
+код-испанами (имя больше не склеивается латиницей с кириллицей через перенос строки) и иностранное
+слово в записи про дескриптор роли заменено на «запасного чтения». Смысл обеих записей не
+изменён.
