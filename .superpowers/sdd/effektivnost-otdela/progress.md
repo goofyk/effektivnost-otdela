@@ -806,7 +806,8 @@
   `case_mutating` — ровно 3 двойника загрузки).
 - Код контура: `scripts/exec_probe.py` (2380 строк) — `VARIANT_COMMAND`/`VARIANT_TAIL` для 11
   двойников, `CASE_VARIANTS`/`CASE_TWIN`/`case_variants()`/`case_twin_of()`, флаги `--casecheck`
-  (25 шагов) и `--caseload` (12 шагов, в `MUTATING_LADDERS`), `CASE_OBSERVATION_REASONS`, хелперы
+  (25 шагов) и `--caseload` (12 шагов, в `MUTATING_LADDERS`), `CASE_OBSERVATION_REASONS`,
+  вспомогательные функции
   `case_ladder_variants`/`case_twin_adjacency`/`case_twin_signature_diff`, блок отчёта `case_*`;
   `tests/test_exec_probe.py` (1856 строк) — `TestCaseLadders` (15 тестов) и правки четырёх
   существующих классов. Проверки: `python -m unittest discover -s tests` → `Ran 297 tests … OK`
@@ -1538,3 +1539,165 @@ PREDICTED (записаны до прогона, после прогона не 
     читатель `p1c.load`, которым пользуются `load forms`, `check.bsl`, `metrics` и `diff`, изменён в
     задачах 22–24, и чем именно изменятся их отчёты — можно узнать только повтором матрицы. Всё
     непредсказанное записывается отдельным списком с причиной после прогона.
+
+### Журнал итерации 13: Task 27 (единственный 1С-прогон `gate-16`, пересъёмка матрицы, правка документов)
+
+- **Что закрыто:** единственная 1С-операция итерации (`gate-16`), пересъёмка матрицы покрытия на манифест
+  прочитанных файлов, сверка артефакта с пунктами 1–14 выше, правка четырёх документов и проверка
+  номерных ссылок. Хэши этой задачи: код замера `c88ce8f`, документы `86d63e1`, отмеченные шаги 1–8
+  плана `0a2aed4`, этот журнал — следующий коммит, финальный коммит плана (шаги 9–10) — после него.
+
+**Единственный прогон платформы.**
+
+- Команда: `python scripts/gate.py --cfg "cfg/ЭффективностьОтдела" --out reports/gate-16.json --canon
+  docs/canonical-rights.json --timeout 240` (`bin`, `ib`, `dump`, `p1c` подставлены из
+  `local.paths.json`); без `--allow-mutating`, один раз, повторов «для устойчивости» не было; гейт-ИБ
+  открыт только на чтение.
+- Итог: код 0, артефакт `reports/gate-16.json` — 8438 байт и 27 ключей верхнего уровня; набор ключей
+  идентичен `reports/gate-15.json` (8180 байт) и `reports/gate-14.json` (8125 байт).
+- Шаги по замеренным `started` и `seconds`: `load` начался 07:45:11, 8.0 с, `bytes 3`; `check` 07:45:19,
+  2.0 с, `bytes 73`; `dump` 07:45:21, 2.0 с, `bytes 3` (закончился 07:45:23). У всех трёх код 0,
+  `timed_out false`, `reason ""`.
+- `create`-шага нет: `create_code null`, `ib_ready_before true`; `step_problems []`,
+  `diagnostic_findings []`, `reason ""`, `tool_counts_error ""`.
+
+**Сверка с `PREDICTIONS` (пункты 1–14; сам список выше не переписан).**
+
+1. Подтверждено: код 0, `reason ""`, `step_problems []`, `diagnostic_findings []`.
+2. Частично: `check` 2.0 с и `dump` 2.0 с, три шага, `create` отсутствует и `create_code null` — как
+   предсказано; `load` 8.0 с вместо ≈6 с. Это единственное числовое отклонение прогона (причина —
+   отдельным списком ниже, пункт 1).
+3. Подтверждено: `metadata.layout` и `layout_source` — 22 класса, `files 31` и те же числа, что у
+   `gate-15.json`: `bsl_module 8`, `object_module 6`, `form_descriptor 2`, `form_data 2`, `form_module 2`,
+   `role 2`, `role_rights 2`, и по 1 у `predefined_data`, `language`, `subsystem`, `report_template`,
+   `report_template_data`, `common_module`, `accumulation_register`, `catalog`, `constant`,
+   `data_processor`, `document`, `enum`, `information_register`, `report`; `layout_compare {}`;
+   `layout_dump` — 22 класса с `files 31`; `metadata.expected_mismatch {}`, `metadata.hard_problems []`,
+   `metadata.problems []`, `metadata.reason ""`.
+4. Подтверждено: `rights` код 0, `rights_files 2`, `object_blocks 17`, `rights 79`, `problems []`;
+   `rights_immobility` код 0, `dropped []`, `added []`, 17 блоков из 17 и 79 прав из 79.
+5. Подтверждено: `tool_counts_source` — 22 ключа с `files 30` и числами манифеста исходника:
+   `bsl_module 8`, `object_module 6`, `form_module 2`, `form_descriptor 2`, `form_data 2`, `role 2`,
+   `role_rights 2`, по 1 у `predefined_data`, `language`, `subsystem`, `report_template`,
+   `report_template_data`, `common_module` и восьми дескрипторов коллекций.
+6. Подтверждено: `tool_blind_kinds` пуст (у `gate-15.json` — 10 классов, у `gate-14.json` — 12).
+7. Подтверждено: `tool_counts_dump` — те же 22 ключа и `files 30` (в выгрузке 32 файла на диске,
+   прочитаны 30; `Configuration.xml` не открывает ни один парсер записей).
+8. Подтверждено: `dump_files 32`, `dump_fresh_files 32`; `diff_files` равен составу `gate-14.json` и
+   `gate-15.json`: `same 21` (в том числе `Catalogs/Сотрудники/Ext/Predefined.xml`), `reordered 2` (оба
+   `Roles/*/Ext/Rights.xml`), `differ 8`, `only_source 0`, `only_dump 0`, `platform_added 1`
+   (`ConfigDumpInfo.xml`).
+9. Подтверждено: различие с `gate-15.json` ровно в четырёх ключах — `steps`, `tool_counts_source`,
+   `tool_counts_dump`, `tool_blind_kinds`; побайтового равенства не ожидаем и его нет.
+10. Подтверждено: матрица — 18 прогонов восьми инструментов (`bsl`, `cf`, `diff`, `forms`, `graph`,
+    `load`, `metrics`, `sdbl`), платформа внутри матрицы не запускалась; коды те же, что в прежнем
+    замере: 2 у `load-object-wrong-order`, `forms-form-wrong-order` и `cf-info-cfg-dir` (у последнего
+    JSON-отчёта нет, `stderr: Книга .cf ожидается файлом, а передан каталог: <cfg>` — одинаково в прежнем
+    и нынешнем замере), 1 у `bsl-check-cfg` (15 находок, `stats.files 8`), 0 у остальных 14.
+11. Подтверждено: у `load-model-cfg` и `load-model-dump` — 30 различных путей и 16 различных имён
+    (было 7 и 14), новых имён два: `Русский` и `ОсновнаяСхемаКомпоновкиДанных`; суммы хитов по классам
+    — 68 путей и 21 имя у каждого из двух прогонов; имён только как часть пути 0, хитов только в консоли 0.
+12. Подтверждено: категории матрицы 22 / 0 / 0 (было 7 / 12 / 3); `reader_kind_counts` обоих модельных
+    прогонов — 22 класса с `files 30`; `reader_vs_gate` (верхнеуровневый ключ `reports/toolcov_runs.json`)
+    — `equal_to_gate_tool_counts_source true` и пустой `diff_reader_vs_gate` как против `gate-16.json`,
+    так и против прежнего снимка матрицы (`gate_artifact gate-15.json`).
+13. Подтверждено, но шире предсказанного: до правок документов `--check` отказал (код 1) не на трёх
+    строках матрицы, а на 41 вхождении фрагментов в шести регионах (`coverage-kinds` 16,
+    `coverage-content-load` 14, `coverage-reconcile` 7, `coverage-content-checks` 1, `coverage-runs` 2,
+    метка `self-dotted` 1). После правок §2, §5 и §11 — код 0, `fragments: 28 checked lines: 692`,
+    `unused fragments: none`.
+14. Ответ на предсказание: пути и имена 16 из 18 прогонов не изменились (сверка прогон за прогоном с
+    прежним снимком матрицы); изменились только `load-model-cfg` и `load-model-dump` — пути 16 → 68,
+    имена 18 → 21.
+
+**Что оказалось непредсказанным (причины измерены, кроме названной не измеренной).**
+
+1. `load` 8.0 с вместо ≈6 с. Причина не измерена: в артефакте нет разбивки шага `load`, `bytes 3` у него
+   такое же, как у `gate-15.json`, и `scripts/ib_loop.py` в этой итерации не правился. Отклонение
+   зафиксировано как отклонение; `PREDICTIONS` не переписаны.
+2. Ключи `diagnostics` (одна строка «Синтаксических ошибок не обнаружено!») и `diagnostics_by_step`
+   (`check` — 1 строка, `load` и `dump` пустые) равны прежним артефактам, хотя в списке предсказаний их
+   не было.
+3. Очередь модулей читателя выросла 18 → 20: добавлены два слота модулей форм (правка `dcf0112`). Замер
+   `probe/reader_module_queue.py` → `reports/reader-module-queue.txt`: 20 записей — 7 «менеджер
+   значений», 3 «менеджер значений (регистр)», 2 «модуль набора записей (регистр)», 5 «модуль объекта»,
+   1 модуль общего модуля, 2 модуля форм; файлов на диске 8, отсутствующих слотов 12; манифест 30
+   записей, `skipped_files 0`; объектов 8, форм объектов 2, общих модулей 1, общих форм 0. Из-за этой
+   строки изменился `stderr` в 11 из 18 прогонов матрицы (у `diff-model-cfg-dump` — дважды), но пути и
+   имена не изменились ни у одного из них, кроме двух модельных прогонов.
+4. Правка генератора `probe/render_query_tables.py` вне списка файлов задачи: добавлены `MANIFEST_KEYS`
+   и `manifest_class_counts()`, чтобы таблица покрытия классов строилась парами манифеста, а не ключами
+   модели (иначе `--check` не прошёл бы по новой таблице), и исправлена метка `:350` — смешанное
+   написание (кириллическая `д` в начале латинского слова) заменено на `dotted-написание виртуальной
+   таблицы`, как в остальных строках документа; та же строка `docs/evidence/canonical-queries.md:229`
+   исправлена по этому же замеру.
+5. Цитаты таблиц и `OUT`-блоков перенесены скриптом сверки (сначала просмотр расхождений, затем
+   применение): изменено 5 регионов из 8 (`coverage-runs` 2 строки, `coverage-kinds` 16,
+   `coverage-reconcile` 7, `coverage-content-load` 14, `coverage-content-checks` 1). Вариант вставки по
+   маркерам не применялся: маркеров таблиц и блоков ни в одном из 15 документов `docs/evidence/` нет
+   (проверено). `docs/слепые-пятна.md` (390 строк) и `docs/итог-боевой-проверки.md` (323 строки)
+   правлены вручную, потому что проверка фрагментов покрывает только четыре документа `docs/evidence/`.
+   `docs/evidence/tool-coverage.md` — 1025 строк в `f6330c7` и 1148 после правок.
+6. Номерные ссылки на `probe/tool_coverage.py` переведены на рабочее дерево: файл сдвинулся
+   (537 строк в `f6330c7`, 538 в рабочем дереве; `GATE_ARTIFACT` со строки 58 на 59), поэтому
+   обновлены ссылки `PATH_EDGE` 286,
+   `name_occurrences` 289-304, `PATH_ONLY_KINDS` 109, `OTHER_NAMED_KINDS` 100, `names_counted` (`:92`),
+   `GENERIC_STEMS` 105, `entity_name` 174-187, колонок консоли 334 / 336-337 / 338-342, `tables` 407,
+   `:414-416`, `:518`, `:521-524` и `skd_query_text()` 213-219; ссылки на исходники `p1c` сверены по HEAD
+   `900ae8d` (`cli.py:151-160`, `rglob("*.bsl")` 157, `cmd_check` `:213`, `stats["files"] += 1` `:237`,
+   `cmd_query` `:261`, `load/cli.py:124-131` и `:114`, `check/forms/cli.py:195-202` и `:180`). Проверка
+   83 ссылок шести документов: 17 ссылок не разрешились из-за сокращённых имён файлов (`reader.py`,
+   `checks.py`, `semantic.py`, `platform_arities.py`, `sdbl.py`, `test_scan.py`) — все 17 сверены вручную
+   по полным путям (`src/p1c/load/reader.py`, `src/p1c/check/forms/checks.py`,
+   `src/p1c/check/bsl/semantic.py`, `src/p1c/data/platform_arities.py`, `src/p1c/sdbl/sdbl.py`,
+   `tests/load/test_scan.py`, 11 различных мест) и ведут на строки, которые говорят то же, что и ссылка;
+   битых ссылок не осталось.
+7. В HEAD `probe/tool_coverage.py:58` стоял `gate-15.json`, а не `gate-14.json` — шаг 5 задачи 26 об этом
+   не говорил. Переход сделан на `gate-16.json` (`:59`); прежние артефакты остались записью прежних
+   замеров (12 классов и 10 слепых у `gate-15.json`, 10 и 12 у `gate-14.json`), их числа в документах
+   не переписаны.
+8. Наблюдение: `reader_vs_gate` против `gate-14.json` даёт два расхождения — `predefined_data [1, 0]` и
+   `role_rights [2, 0]`. Причина: `gate-14.json` посчитан читателем до правок A1–A2, где этих записей не
+   было; матрица сверяется с `gate-16.json`, поэтому в матрице расхождение не проявляется. Это
+   наблюдение, а не правка.
+9. Шаги 2 и 6 плана оказались неверны по замеру и исправлены коммитом `0a2aed4` с явной пометкой:
+   каталог выгрузки существует (32 файла, след прогона `gate-15`), а в шаге 6 были выдуманы
+   `Subsystems/ConfigGenerationSettingsStorageMap.xml`, `Reports/ОтчётЗагрузки/Templates/ОтчётПоЗатратам.xml`
+   и `…/Schema.dcsset`. Замер: каталога `SettingsStorages` в `cfg/ЭффективностьОтдела` нет (12 папок и
+   `Configuration.xml`, 31 файл), макет отчёта — `ОсновнаяСхемаКомпоновкиДанных`.
+10. Отложено и не закрыто в этой итерации: `CommonPictures`, `SettingsStorages`, `SessionParameters`
+    (таких папок в `cfg/ЭффективностьОтдела` нет), строка A6 (модули уровня конфигурации), дескрипторы
+    `Commands/<Имя>.xml`. Два наблюдения задачи 25 не исправлены: одиночный дескриптор `Forms/<Имя>.xml`
+    или `Templates/<Имя>.xml` без каталога не открывается (манифест пуст), и нечитаемый
+    `Roles/<Имя>/Ext/Rights.xml` даёт непройденный `xml.etree.ElementTree.ParseError` в `parse_rights_xml`
+    (`src/p1c/load/reader.py:610`, вызов `:1071`) вместо записи в `skipped_files`.
+
+**Что не изменено и чем проверено.**
+
+- Не тронуты `scripts/exec_probe.py`, `tests/test_exec_probe.py:947`, `docs/expected-metadata.json`,
+  `PATH_ONLY_KINDS` (`probe/tool_coverage.py:109`) и `OTHER_NAMED_KINDS` (`:100`); прежние числа
+  (`gate-14.json` 10 и 12, `gate-15.json` 12 и 10, прежняя матрица 7 / 12 / 3 и 5 / 10 / 7) остались в
+  документах как запись прежних замеров.
+- Тесты после всех правок: контур — `python -m unittest discover -s tests` → Ran 300 tests, OK, код 0;
+  `p1c` — `python scripts/run_tests.py` → тестов 79, неудачно 0, код 0, рабочее дерево `p1c` чистое;
+  `python probe/render_query_tables.py --check` → код 0 (`fragments: 28 checked lines: 692`).
+- Скан текстов (семь файлов `docs/` вместе с этим журналом и три файла `probe/`) сверен построчно с
+  состоянием до правок задачи 27 (коммит `f6330c7`): было 53 флага, стало 54. Новые — 3 в строках
+  этого журнала, где приведены цитаты имён корпуса `ВыгрузкаЗатратCSV` и
+  `СервисКриптографииDSSСлужебный`, в которых латиница стоит вплотную к кириллице, и 1 в файле плана
+  (то же первое имя). Оба имени уже стоят в закоммиченных документах, новых имён не придумано. Сняты
+  3 прежних флага: в метке `dotted-написание виртуальной таблицы` кириллическая `д` заменена на
+  латинскую — `docs/evidence/canonical-queries.md:229` и генератор
+  `probe/render_query_tables.py:350`; в прежней строке 809 этого файла заимствованное английское
+  название вспомогательной функции заменено на `вспомогательные функции` (правка вне задачи 27, чтобы
+  в репозитории не осталось ни одного флага по списку англицызмов; в этом журнале то слово не
+  приводится). Прочие флаги совпадают с прежним замером: 24 в `docs/evidence/tool-coverage.md`, 6 в
+  `docs/evidence/canonical-queries.md` (4 — имя обработки, 2 — встроенное имя функции 1С, начинающееся
+  кириллицей и продолжающееся латиницей; `:29` и `:59`, то же имя в `docs/evidence/sdbl-controls.md`),
+  по 1 в `docs/итог-боевой-проверки.md` и `docs/план-оптимизации-p1c.md`, 1 в
+  `probe/tool_coverage.py:293` (в докстринге приведён вид пути из отчёта), 3 в
+  `probe/render_query_tables.py:203` и `:204` (экранированные переводы строки, не путь), 0 в
+  `docs/слепые-пятна.md` и `probe/reader_module_queue.py`. CJK нигде не встречается; отметки по
+  абсолютным путям — только названные цитаты в докстрингах `probe/`; записываемых абсолютных путей в
+  файлах `probe/` и `docs/` нет. Из прежних 15 флагов `progress.md` (все до заголовка этого журнала)
+  снят названный выше флаг в прежней строке 809, остальные 14 не тронуты.
