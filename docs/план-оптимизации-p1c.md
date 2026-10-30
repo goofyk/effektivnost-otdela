@@ -23,11 +23,12 @@
 | A1 | Читать `Roles/*/Ext/Rights.xml`: отдавать по роли список объектов с правами (`Вид`, `Доступ`), значение только из файла | новый читатель прав в `load/reader.py`; сейчас прав нет ни в одном отчёте | на нашей cfg: 2 роли, 17 блоков, 79 прав (канон `docs/canonical-rights.json`); сравнить с `rights_immobility` гейта (17/79) |
 | A2 | Читать предопределенные данные (`Ext/Predefined.xml`) как список строк с uuid и представлением | `load/reader.py` (сейчас не читает `Templates`, предопределенные данные, `CommonPictures`, `SettingsStorages`, `SessionParameters`, `Roles`, `SubSystems`, `Languages`) | `layout_source.predefined_data 1`; expect 1 файл и его строки |
 | A3 | Читать `Languages/Русский.xml`, `SubSystems/*.xml`, `CommonPictures`, `SettingsStorages`, `SessionParameters` — **закрыто наполовину (итерация 13, задачи 22–23)**: первые два читаются и называются, трёх остальных групп в `cfg` нет | тот же reader | `gate-16.json` → `tool_counts_source`: `language 1`, `subsystem 1` (путь `Languages/Русский.xml`, `Subsystems/ЭффективностьОтдела.xml`); в `cfg` их сейчас нет для `CommonPictures`/`SettingsStorages`/`SessionParameters` — добавить их в конфигурацию (итерация 9), чтобы мерить |
-| A4 | `Templates` и их содержимое: отдельно класс шаблона и отдельно текст SKD — **закрыто (итерация 13, задача 25)** | `load/reader.py` + `check/sdbl/cli.py` | `report_template 1`, `report_template_data 1` в модели и в манифесте; `sdbl query` даёт `queries 1` на тексте запроса из `Schema.dcsset` |
+| A4 | `Templates` и их содержимое: отдельно класс шаблона и отдельно текст SKD — **закрыто (итерация 13, задача 25)** | `load/reader.py` + `check/sdbl/cli.py` | `report_template 1`, `report_template_data 1` в модели и в манифесте (пути `Reports/ОтчётЗагрузки/Templates/ОсновнаяСхемаКомпоновкиДанных.xml` и `…/ОсновнаяСхемаКомпоновкиДанных/Ext/Template.xml`); текст `<query>` из этого же файла (1097 символов) разобран `sdbl query` — `queries 1`, `field_ok 13` из 13 ссылок, 0 пропусков полей (`docs/evidence/tool-coverage.md` §7) |
 | A5 | Называть класс прочитанного файла в отчёте (на замеренном прогоне 5 классов видны только путём: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`; после A1/A2 их 7 — добавились `predefined_data` и `role_rights`) — **закрыто (итерация 13, задачи 21–26)**: класс называется манифестом `model.read_files` | `load/reader.py` (манифест `read_files`: пара `path`/`kind` в точке открытия) | матрица: `kinds_seen_by_path` 5 → 7 → 22, `kinds_seen_by_no_tool` 7 → 3 → 0 |
 | A6 | Отдельная подкоманда `load config` (или поля в `load model`) для модулей уровня конфигурации: `Ext/SessionModule.bsl`, `Ext/ManagedApplicationModule.bsl`, `Ext/OrdinaryApplicationModule.bsl`, `Ext/ExternalConnectionModule.bsl`, `Ext/CommandInterface.xml`, `Ext/HomePageWorkArea.xml` — **открыта и отложена (итерация 13)**: этих файлов в `cfg` нет | `load/cli.py`, `load/reader.py` | итерация 9 добавляет эти файлы в cfg; после этого прогон обязан дать по одному хиту на файл |
 
-**Метрика блока:** `tool_blind_kinds` 12 → 0; `kinds_seen_by_no_tool` 7 → 0.
+**Метрика блока:** `tool_blind_kinds` 12 → 0; `kinds_seen_by_no_tool` 7 → 0 — достигнута прогоном
+`gate-16.json` (итерация 13).
 
 Статус блока A к итерации 12. A1 и A2 закрыты в `p1c` — читатель прав ролей и предопределённых данных
 в `load/reader.py` и ключи `roles` и `predefined_data` в модели метаданных. На нашей cfg читатель даёт
@@ -50,9 +51,11 @@
 `SettingsStorages` и `SessionParameters` остаются незакрытыми и на этом корпусе неизмеримыми —
 таких папок в `cfg` нет (12 папок и файл `Configuration.xml`). A4 закрыта: класс шаблона и его
 содержимое разделены — `report_template` (путь
-`Reports/ОтчётЗагрузки/Templates/ОтчётПоЗатратам.xml`, `template_type DataCompositionSchema`) и `report_template_data`
-(путь `…/Templates/ОтчётПоЗатратам/Schema.dcsset`: 1 набор данных из 6 полей, 1 вычисляемое поле,
-текст запроса 1097 символов из того же файла). A5 закрыта: класс прочитанного файла называется
+`Reports/ОтчётЗагрузки/Templates/ОсновнаяСхемаКомпоновкиДанных.xml`, `template_type DataCompositionSchema`) и `report_template_data`
+(путь `…/ОсновнаяСхемаКомпоновкиДанных/Ext/Template.xml`: 1 набор данных из 6 полей, 1 вычисляемое поле
+`КоэффициентЗагрузки`, текст запроса 1097 символов из того же файла). Прежние имена этого макета —
+`ОтчётПоЗатратам.xml` и `Schema.dcsset` — были выдуманы и заменены замеренными (пункт 9 журнала
+Task 27). A5 закрыта: класс прочитанного файла называется
 манифестом `model.read_files` (`{"path", "kind"}`) в точке фактического открытия файла парсером, и
 матрица даёт `kinds_seen_by_path` 22 вместо 7, `kinds_seen_by_name_only` 0 вместо 12,
 `kinds_seen_by_no_tool` 0 вместо 3. **Метрика блока достигнута**: `tool_blind_kinds` 12 → 0 и
@@ -89,12 +92,12 @@
 
 | # | Дефект (замер) | Что сделать | Как проверить |
 | --- | --- | --- | --- |
-| C1 | `check.bsl` даёт 15 находок на чистом коде: 11 `IDS_STX_VAR_NOTDECLARED` и 3 `IDS_STX_METHODNOTFOUND` — шум канона (неявные реквизиты, `Движения.`) | признавать канонические написания корпусов; по умолчанию не выдавать находку, если канон корпуса её подтверждает | корпус: `.Добавить(` 688 873, `Новый Массив` 109 195, `СУММА(` 38 924 против `СУММ(` 0, `ВЫБОРКА` 7, `МАКС(` 28 (`corpora-query-canon-16.json`); самомер `self-canonical-17.json` |
+| C1 | `check.bsl` даёт 15 находок на чистом коде: 11 `IDS_STX_VAR_NOTDECLARED` — шум канона (8 неявных реквизитов `Ставка`/`ДатаПриёма`/`Сотрудник`/`Часы`/`НачалоПериода` и 3 на неявное свойство `Движения.`); остальные 4 — пробел данных, см. C2 | признавать канонические написания корпусов; по умолчанию не выдавать находку, если канон корпуса её подтверждает | корпус: `.Добавить(` 688 873, `Новый Массив` 109 195, `СУММА(` 38 924 против `СУММ(` 0, `ВЫБОРКА` 7, `МАКС(` 28 (`corpora-query-canon-16.json`); самомер `self-canonical-17.json`; разбор 15 находок — `docs/evidence/tool-coverage.md` §9 |
 | C2 | `СообщениеПользователю` → `IDS_STX_CTOR_NOTFOUND`, хотя корпус знает конструктор: 26 426 встреч в 3 820 файлах (`corpora-msg-ctor-18.json`) | внести тип в `COLLECTIONS` или `EXTRA_TYPES` (`metadata/model.py:124`, `:128`, `:186`) с арностью 0; арность конструктора сейчас пустая (`platform_arities.py:18739`) | `p1c-ctor-data-23.json` → `builtin_type_model.СообщениеПользователю.ctor_arities` пустой; после правки прогон `bsl-check-cfg` обязан не дать этой находки |
 | C3 | Модель типов не знает конструкторов у 1869 типов из 1913 и свойств ни у одного из 1885 записей `TYPE_SIGNATURES`; harvest арностей (`p1c/scripts/extract_help_arities.py`) даёт 0 | собирать арности конструкторов и свойств из описаний платформы и подтверждать корпусом (`Новый <Имя>(`) | `p1c-ctor-data-23.json` → `types_without_ctor 1869`, `entries_with_ctor_key 0`, `entries_with_properties_key 0` |
 | C4 | Мёртвая таблица `TYPE_CONSTRUCTORS` (22 имени событий/методов, 2 ссылки: объявление и генератор) создаёт ложное представление о «таблице конструкторов» | либо удалить, либо переименовать и пояснить, что она не про конструкторы типов | `p1c-ctor-data-23.json` → `references_total 2`, `references_in_p1c_package 0`, членство `Массив`/`СообщениеПользователю`/`ТекстовыйДокумент` = false |
 | C5 | `check.forms events` без `--kind` = 26 событий `ClientApplicationForm`; `--kind` не валидируется: `zzz-netakogo-vida` → код 0 и те же 26 имён; у 7 из 14 видов `is_managed_page false` | валидировать список видов; для `accounting_register`, `chart_of_accounts`, `chart_of_calculation` и остальных шести дать корректную страницу событий или явно сказать, что событий нет | `forms-events-kind-19.json` (16 прогонов, `pages_total 135`, `form_extension_pages 29`, `base_event_names_len 26`), `check/forms/checks.py:42-57`, `:143-146`, `check/forms/cli.py:162-170`, `:187` |
-| C6 | `check.forms form` возвращает пустые `kind` и `owner` | заполнять из владельца формы | `toolcov_forms-form-element.json` (код 0) |
+| C6 | `check.forms form` оставляет `kind` и `owner` пустыми у всех трёх обработчиков `ФормаЭлемента` — при том что `form.kind` (`catalog`) и `form.object` (`Сотрудники`) в том же отчёте заполнены | заполнять `kind`/`owner` каждого события из владельца формы | `toolcov_forms-form-element.json` (код 0); пересъёмка матрицы под `gate-16.json` (30.10.2026) даёт те же пустые `kind`/`owner` у трёх событий; разбор — `docs/evidence/tool-coverage.md` §7, §10 |
 | C7 | `sdbl check` на модулях формы не обходит строку запроса в тернарной функции | читать обе ветки | `toolcov_sdbl-check-cfg.json` (код 0, `stats.files 8`, `queries 3`); в cfg есть SKD-запрос в `?(` в модуле формы (`DataProcessors/ВыгрузкаЗатратCSV/Ext/ObjectModule.bsl:82`, `:97`) |
 | C8 | Пропуск файлов по лимиту не отмечен как «неполная часть»: 214 файлов / 401 742 608 байт вне замера при лимите 1 MiB, 48 файлов — при лимите 2 MiB | в отчёт добавить явный счётчик пропущенного и статус «замер неполон» | `corpora-bsl-sizes-21.json`, `corpora-token-skip-20.json`, `corpora-query-canon-16.json` → `limits` |
 | C9 | `PLATFORM_ANNOTATIONS` содержит только `Вместо`, `ИзменениеИКонтроль`, `Перед`, `После`; корпус знает только 3 имени `&НаСервере…` (`&НаСервереБезКонтекста` 16 920, `&НаСервереБезконтекста` 10, `&НаСерверебезКонтекста` 5) | расширить таблицу директив; сверять имена регистронезависимо | `data/platform_directives.py:44`; `corpora-server-annotation-18.json` (standalone-`&Сервер` — 0 встреч, `server_any` 8 — имена параметров запроса), `corpora-token-skip-20.json` → `vocab_all` (distinct 3) |
@@ -132,7 +135,7 @@
 | --- | --- | --- |
 | F1 | Добавить `--format` и `--out` всем подкомандам `cf` (`info`, `cat`) | `cli-vocabulary-22.json`: у `cf` из общих флагов только `--context` |
 | F2 | Словарь подкоманд и флагов CLI держать замером `--help`, а не догадкой, и обновлять после каждого релиза p1c | `probe/cli_vocabulary.py` → `cli-vocabulary-22.json` (8 инструментов: `cf`, `check.bsl`, `check.forms`, `check.sdbl`, `diff`, `graph`, `load`, `metrics`), `p1c/src/p1c/data/test_cli_flags.json` (426 имён флагов) |
-| F3 | Отчёт обязан содержать перечень прочитанных файлов с классом | матрица: 10 классов подтверждаются только именем, путь не показан (`toolcov_runs.json`; после A1/A2 таких классов 12) |
+| F3 | Отчёт обязан содержать перечень прочитанных файлов с классом — **закрыто (итерация 13, задачи 21–26)**: `load model` отдаёт манифест `model.read_files` | матрица: было 10 классов только именем (путь не показан), после A1/A2 — 12; после `gate-16.json` — `kinds_seen_by_name_only 0` при `kinds_seen_by_path 22` |
 | F4 | Отдельный код/статус при `schema_available false` и при `stats.files == 0` | `toolcov_runs.json` → `shape.schema_available null` во всех reader-отчётах |
 | F5 | `_diagnose` и пропуски полей показывать в отчёте, а не молчать | `toolcov_sdbl-check-cfg.json` → `skip_field_fields_unknown 3`, `skip_vt_no_help_fields 1` |
 | F6 | Регистронезависимость написаний закрыта замером 26: в `p1c` держать одно измеренное написание (`-listFile`, `/CheckConfig`, `/CheckModules`) и не делать из другого написания отдельный флаг; тестом «регистронезависимость» не покрывать — наблюдаемого различия нет | `reports/flags-26-caseload.json` (`case-listfile-lower` = `-listfile` и `case-format-lower` = `-format`: код 0, 3 байта — побайтово как у близнецов `load-listfile-ok` и `load-format-flag`), `reports/flags-26-casecheck.json` (8 двойников имён группы проверки), раздел 12 `docs/evidence/exec-modes-and-negatives.md`; исправленное прочтение прошлых кодов: `effect-16-loadopts-full.json` (`listfile-onefile` — 90 байт «Ошибка чтения файла-списка загружаемых файлов», `listfile-ok` — 337 байт отказа частичной загрузки) |
@@ -145,15 +148,15 @@
 
 | мера | сейчас | цель |
 | --- | --- | --- |
-| `tool_blind_kinds` (гейт) | 10 (`gate-15.json`; в `gate-14.json` было 12) | 0 |
-| `kinds_seen_by_no_tool` (матрица) | 3 (было 7) | 0 |
-| `kinds_seen_by_path` | 7 (было 5) | 22 |
-| `kinds_seen_by_name_only` | 12 (было 10) | 0 (каждое имя подтверждается и путём) |
-| находки `check.bsl` на рукописной конфигурации | 15, из них 14 шум | 1 истинный дефект либо 0 при исправленном каноне |
+| `tool_blind_kinds` (гейт) | 0 (`gate-16.json`; было 12 в `gate-14.json`, 10 в `gate-15.json`) | 0 — достигнута |
+| `kinds_seen_by_no_tool` (матрица) | 0 (было 7, затем 3) | 0 — достигнута |
+| `kinds_seen_by_path` | 22 (было 5, затем 7) | 22 — достигнута |
+| `kinds_seen_by_name_only` | 0 (было 10, затем 12) | 0 (каждое имя подтверждается и путём) — достигнута |
+| находки `check.bsl` на рукописной конфигурации | 15: 11 шум канона и 4 пробел данных `p1c` (`Новый СообщениеПользователю` и три его метода) | 1 истинный дефект либо 0 при исправленном каноне |
 | `types_without_ctor` / `types_without_properties` | 1869 / 1885 | заметно меньше 1869; хотя бы 30 типов с подтверждёнными арностями конструктора |
-| `check.forms form` (`kind`, `owner`) | пусто | заполнены |
-| коды CLI, возвращающие 0 безусловно | 7 | 0 |
-| классы, подтверждённые SKD-замером (`queries`, `sources`, `field_ok`) | 1 запрос, `skip_vt_no_help_fields 1` | 1 запрос без пропусков полей |
+| `check.forms form` (`kind`, `owner`) событий | пусто у всех трёх обработчиков (`form.kind` и `form.object` в том же отчёте заполнены) | заполнены |
+| коды CLI, возвращающие 0 безусловно | 0 безусловных: в матрице 18 прогонов код 1 у `bsl-check-cfg` (15 находок), код 2 у `cf-info-cfg-dir`, `load-object-wrong-order`, `forms-form-wrong-order`; восемь оставшихся `return 0` (`cf/cli.py:158, 164, 204, 217, 232`; `check/forms/cli.py:183`; `check/sdbl/cli.py:313`; `load/cli.py:108`) стоят под комментарием «код 1 структурно недоступен», потому что отсутствующий источник уже сообщён ошибкой контекста с кодом 2 | 0 — достигнута правкой обвязок (итерация 10) |
+| классы, подтверждённые SKD-замером (`queries`, `sources`, `field_ok`) | `sdbl check`: 3 запроса, `sources 7`, `field_ok 20` из 23 ссылок, `skip_vt_no_help_fields 1`, `skip_field_fields_unknown 3`; `sdbl query` на тексте макета: 1 запрос, `field_ok 13` из 13 | обход без пропусков полей |
 
 Порядок работ: сначала A1–A2 и B1–B3 (без них любое сравнение «покрытия» врёт),
 затем C1–C4 (шум и модель типов), затем B7–B8 и D1–D7 (SKD), затем E1–E3 (честность
