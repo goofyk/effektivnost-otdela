@@ -1426,3 +1426,115 @@ PREDICTED (записаны до прогона, после прогона не 
      (`p1c/src/p1c/load/reader.py:610`, вызов в обходе ролей `:1071`) вместо записи в `skipped_files`,
      и обход прерывается: код команды не возвращается. Ожидается другое: нечитаемый файл обязан быть
      записью диагноза, как нечитаемый модуль.
+
+### Журнал итерации 13: Task 26 (счётчик контура перестроен на манифест)
+
+- **Что закрыто:** `scripts/counts.py::counts_from_model` считает классы по парам `path`/`kind`
+  манифеста `read_files` — по фактам открытия файла парсером. `files` стал длиной манифеста,
+  `bsl_module` — числом манифестных записей с путём на `.bsl`, `skipped_module_files` остался
+  record-производным (записи диагноза `skipped_files`, манифестной пары у них нет). Счёт по ключам
+  модели удалён полностью.
+- **Замер до правки (причина RED):** `python -m unittest tests.test_contour.CountsTest -v` —
+  отказали 4 теста из 8, и все четыре — assertions о классах, импорт целый:
+  `test_counts_come_from_manifest_pairs` вернул `{}` (прежний счётчик манифест не читает);
+  `test_model_keys_without_manifest_pairs_count_as_nothing` вернул из ключей модели
+  `catalog 2, command_module 1, common_attribute 1, common_form 1, common_module 2, form_data 2,
+  predefined_data 1, role_rights 1` там, где ожидание `{}`; корпусный счётчик назвал 12 имён против
+  ожидаемых 22; сверка имён с `layout_counts` — те же 12 против 22.
+- **Что было зелёным ещё до правки:** `test_compare_detects_mismatch`,
+  `test_skipped_module_files_stay_record_derived` (записи диагноза счётчик считал и раньше) и оба
+  теста отказа читателя (`test_object_counts_refuses_without_reader_path`,
+  `test_object_counts_wraps_reader_refusal_as_runtime_error`).
+- **Классы, которые исчезли из счётчика:** `common_form`, а также record-производные `form_data`
+  (по числу форм в записях объектов) и `command_module` (по числу команд). Теперь `form_data`
+  появляется только как манифестная пара, созданная парсером содержимого формы; `command_descriptor`
+  и `command_module` в нашем корпусе равны нулю и в сверке не участвуют (каталога `Commands` нет).
+  Прежний запрет «объявлять дескриптор роли прочитанным нельзя» стал проверкой `role` только как
+  манифестной пары: при открытии лишь `Roles/<Имя>/Ext/Rights.xml` имени `role` в счёте нет.
+- **Step 5, сверка без платформы:** режима `--offline` у `probe/tool_coverage.py` нет (проверено по
+  `main` `434-533`), поэтому сверка сделана прямыми вызовами `layout_files`, `layout_counts`,
+  `counts_from_model` и `reader_kind_counts` скриптом во временном каталоге — обход 31 файла
+  исходника и 32 файла выгрузки, вне окна 1С-замеров. Итог: `layout_files` — 22 класса и
+  `layout_counts_match` без расхождений; `layout_counts` и `counts_from_model` называют одни и те
+  же 22 имени; `tool_blind_kinds` по прежней формуле (`set(layout_source) − set(tool_counts_source)`,
+  `scripts/gate.py:370-371`) становится пустым; единственное числовое различие — `files` `[31, 30]`,
+  незакрытым остаётся ровно `Configuration.xml`; `kinds_seen_by_path` по манифесту — 22, невидных
+  классов нет. По выгрузке тот же результат: манифест 30 записей, `skipped_files` пуст, слепых
+  классов нет.
+- **Прогон тестов:** `python -m unittest discover -s tests` — тестов 300, отказов 0, ошибок 0.
+  Четыре корпусные проверки `CountsTest` прогнаны, а не пропущены (в выводе 3 строки со словом
+  `skipped`, и все три — имена тестов, которые проверяют пропуск нечитаемых файлов; признака
+  пропуска `skipped (` в прогоне нет).
+- **Что не тронуто:** артефакты прежних прогонов `reports/gate-14.json` и `reports/gate-15.json`
+  (`tool_counts_source` в них — запись прежнего замера: 10 и 12 классов, `tool_blind_kinds` — 12 и
+  10), `scripts/exec_probe.py` с `source: "reports/gate-14.json"`, `tests/test_exec_probe.py:947`,
+  `docs/expected-metadata.json`, а также `PATH_ONLY_KINDS` (`probe/tool_coverage.py:108`) и
+  `OTHER_NAMED_KINDS` (`:99-100`) — они описывают меру матрицы, а не способ счёта.
+- **Коммиты:** код и тесты контура — `f1833b1` (`scripts/counts.py`, `tests/test_contour.py`);
+  правка плана с отмеченными замерами — `cb2cc97`.
+
+### Итерация 13, Task 27: PREDICTIONS (записаны до прогона, после прогона не переписываются)
+
+Исходные данные до прогона (замерены, не вывод): `cfg/ЭффективностьОтдела` — 31 файл, свежайший
+2026-10-28 15:02:17, то есть с прогона `gate-15` исходник не менялся; гейт-ИБ существует (11
+файлов, свежайшая запись 2026-10-29 21:21 — след прогона `gate-15`), поэтому шаг `create` не
+понадобится; каталог выгрузки тоже существует (32 файла, та же запись прогона) — формулировка плана
+«каталог выгрузки отсутствует, его создаёт шаг `dump`» по замеру неверна: его создал прежний прогон,
+шаг `dump` перезаписывает файлы, а различение старых файлов делает именно проверка свежести
+(`dump_fresh_files` против `dump_files`). Замер манифеста читателя на исходнике и на нынешней
+выгрузке: по 30 записей, `skipped_files` пуст, 22 класса, слепых классов нет. Отчёт команды
+`p1c.load model` по исходнику и по выгрузке содержит 30 различных путей и 16 различных имён
+(среди имён есть `ЭффективностьОтдела` — его читатель называет как подсистему, а не как эхо
+аргумента).
+
+1. Код возврата 0, артефакт `reports/gate-16.json`, `reason` пустой, `step_problems` и
+   `diagnostic_findings` пустые.
+2. Шагов ровно три (`load`, `check`, `dump`), `create` отсутствует, `create_code` остаётся `null`,
+   коды всех трёх шагов 0; длительности `load` ≈ 6 с, `check` ≈ 2 с, `dump` ≈ 2 с (замер
+   `gate-15.json`: 6.0 с, 2.0 с, 2.0 с).
+3. `metadata.layout` (он же `layout_source`) — те же 22 класса и те же числа, что в
+   `gate-15.json`: `files 31`, `bsl_module 8`, `object_module 6`, `form_descriptor 2`, `form_data 2`,
+   `form_module 2`, `role 2`, `role_rights 2`, `predefined_data 1`, `language 1`, `subsystem 1`,
+   `report_template 1`, `report_template_data 1`, `common_module 1` и по 1 у `accumulation_register`,
+   `catalog`, `constant`, `data_processor`, `document`, `enum`, `information_register`, `report`;
+   `expected_mismatch` пуст, `hard_problems` пуст.
+4. `rights` — код 0, `rights_files 2`, `object_blocks 17`, `rights 79`; `rights_immobility` — код 0,
+   `dropped []`, `added []`, 17 блоков из 17 и 79 прав из 79.
+5. `tool_counts_source` — 22 ключа вместо 12, с числами замеренного манифеста исходника: `files 30`,
+   `bsl_module 8`, `object_module 6`, `form_module 2`, `form_descriptor 2`, `form_data 2`, `role 2`,
+   `role_rights 2`, `predefined_data 1`, `language 1`, `subsystem 1`, `report_template 1`,
+   `report_template_data 1`, `common_module 1` и по 1 у восьми дескрипторов коллекций. Причина:
+   `counts.counts_from_model` (через `counts.object_counts`) считает пары манифеста, а не ключи
+   модели.
+6. `tool_blind_kinds` — пустой список вместо 10 классов (`bsl_module`, `files`, `form_descriptor`,
+   `form_module`, `language`, `object_module`, `report_template`, `report_template_data`, `role`,
+   `subsystem`). Причина: читатель назвал все 22 класса, формула вычитания не изменилась.
+7. `tool_counts_dump` — те же 22 ключа и те же числа, что в `tool_counts_source` (в выгрузке тот же
+   состав файлов: 32 файла на диске, 30 прочитанных, `Configuration.xml` не читается ни одним
+   парсером записей).
+8. `dump_files 32`, `dump_fresh_files 32` (шаг `dump` перезаписывает все файлы выгрузки);
+   `diff_files` по составу как в `gate-15.json`: `Catalogs/Сотрудники/Ext/Predefined.xml` в `same`,
+   оба `Roles/*/Ext/Rights.xml` в `reordered`.
+9. Нормализованный JSON `gate-16.json` против `gate-15.json` различается ровно четырьмя местами:
+   `steps` (начало и длительности), `tool_counts_source`, `tool_counts_dump`, `tool_blind_kinds`.
+   Побайтового равенства не будет: `tool_counts_source` стал 22 ключа вместо 12.
+10. Матрица после `GATE_ARTIFACT = "reports/gate-16.json"`: 18 прогонов восьми инструментов
+    (`bsl`, `cf`, `diff`, `forms`, `graph`, `load`, `metrics`, `sdbl`), платформа 1С не запускается,
+    коды прогонов те же, что в прежнем замере: 2 у `load-object-wrong-order`, `forms-form-wrong-order`
+    и `cf-info-cfg-dir`, 1 у `bsl-check-cfg` (15 находок), 0 у остальных 14.
+11. Строки §2 у `load-model-cfg` и `load-model-dump`: файлов cfg в JSON-отчёте 30 вместо 7, имён cfg
+    16 вместо 14, имён только как часть пути 0, хитов только в консоли 0. Суммы хитов по классам
+    (третья величина, `probe/tool_coverage.py:518-521`) — 68 путей и 21 имя у каждого из двух
+    модельных прогонов.
+12. Категории матрицы: закрытые хотя бы по пути файла — 22 класса из 22 (было 7); закрытые только
+    именем сущности — 0 (было 12); не закрытые ни по пути, ни по имени — 0 (было 3: `language`,
+    `report_template`, `report_template_data`). `reader_kind_counts` обоих модельных прогонов — 22
+    класса с `files 30`; `reader_vs_gate` — совпадение с `gate-16.json`, `diff_reader_vs_gate` пуст;
+    `gate_tool_blind_kinds` пуст.
+13. `python probe/render_query_tables.py --check` до правок документов обязан отказать на строках
+    матрицы (покрытии классов и двух строках моделей), и стать зелёным после правок §2, §5 и §11 в
+    `docs/evidence/tool-coverage.md`.
+14. Что заранее не предсказано: пути и имена остальных 16 прогонов матрицы. Причина измерима:
+    читатель `p1c.load`, которым пользуются `load forms`, `check.bsl`, `metrics` и `diff`, изменён в
+    задачах 22–24, и чем именно изменятся их отчёты — можно узнать только повтором матрицы. Всё
+    непредсказанное записывается отдельным списком с причиной после прогона.
