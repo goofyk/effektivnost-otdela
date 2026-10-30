@@ -13,8 +13,9 @@
 Артефакты замера: `reports/toolcov_<ярлык>.json` (по одному на прогон), `reports/toolcov_runs.json`
 (сводка прогонов и матрица классов), `reports/toolcov_summary.txt` (коды возврата и stderr),
 `reports/tool-coverage-matrix-18.md` (матрица в том виде, в котором её переносит генератор),
-`reports/gate-15.json` (гейт, с которым матрица сверяется; `reports/gate-14.json` — тот же гейт по тому
-же исходнику, посчитанный читателем до правок A1/A2). Таблицы и блоки содержимого отчётов в этот
+`reports/gate-16.json` (гейт, с которым матрица сверяется; `reports/gate-15.json` и
+`reports/gate-14.json` — записи прежних прогонов того же гейта по тому же исходнику, посчитанные
+читателем после правок A1/A2 и до них). Таблицы и блоки содержимого отчётов в этот
 документ переносит `probe/render_query_tables.py` дословно из этих артефактов; он же их пересчитывает
 при `--check`.
 
@@ -36,38 +37,41 @@
 Три правила, без которых мера врёт.
 
 **Правило 1. Имя вплотную к `/` или `\` — это отражённый в отчёте путь, а не найденная сущность.**
-`probe/tool_coverage.py::PATH_EDGE` (строка 283) и `name_occurrences` (строки 286-301): если имя стоит
+`probe/tool_coverage.py::PATH_EDGE` (строка 286) и `name_occurrences` (строки 289-304): если имя стоит
 сразу после или сразу перед разделителем пути, эта встреча не засчитывается в покрытие и выносится
 отдельным числом (`name_hits_path_echo_only`). Пример: `"root": "<repo>/cfg/ЭффективностьОтдела"` или
 `"file": ".../Catalogs/Сотрудники.xml"` — инструмент напечатал путь, который мы ему же и передали.
 
-**Правило 2. Пять классов измеряются только путём файла.** `PATH_ONLY_KINDS` (строка 106):
+**Правило 2. Пять классов измеряются только путём файла.** `PATH_ONLY_KINDS` (строка 109):
 `role_rights`, `predefined_data`, `object_module`, `bsl_module`, `files`. Имя роли в отчёте не доказывает,
 что инструмент прочитал `Roles/<роль>/Ext/Rights.xml`; имя справочника — что он прочитал
 `*/Ext/Predefined.xml`. Имена этих классов в покрытие не засчитываются вообще.
 
 **Правило 3. Имя сущности не мерится там, где имя передали мы сами.** У пяти прогонов
-`names_counted: False` (строки 67-88): `load-object-catalog` (`p1c.load.cli object catalog.Сотрудники`),
+`names_counted: False` (строки 70-91): `load-object-catalog` (`p1c.load.cli object catalog.Сотрудники`),
 `load-object-wrong-order`, `forms-form-element` (`p1c.check.forms.cli form ФормаЭлемента`),
 `forms-form-wrong-order`, `sdbl-query-skd` (текст `<skd>` передаётся аргументом). В этих прогонах имя в
 отчёте — эхо наших же слов; там засчитывается только путь файла макета.
 
 Плюс два уточнения меры. Платформенные имена файлов `Form.xml`, `Module.bsl`, `Template.xml` именами
-сущностей не считаются (`GENERIC_STEMS`, строка 102); имя сущности — каталог, в котором лежит её `Ext`
-(`entity_name`, строки 171-184). Колонка «имён только как часть пути» считает имена и в отчёте, и в
-консоли вместе (строки 335-339), а колонка «хитов только в консоли» считает только пути и засчитанные
-имена, которых нет в JSON-отчёте (строки 331-333); поэтому у `cf-info-cfg-dir` эхо-имя есть, а хитов
+сущностей не считаются (`GENERIC_STEMS`, строка 105); имя сущности — каталог, в котором лежит её `Ext`
+(`entity_name`, строки 174-187). Колонка «имён только как часть пути» считает имена и в отчёте, и в
+консоли вместе (строки 338-342), а колонка «хитов только в консоли» считает только пути и засчитанные
+имена, которых нет в JSON-отчёте (строки 334 и 336-337); поэтому у `cf-info-cfg-dir` эхо-имя есть, а хитов
 только в консоли — нет: отчёта у того прогона нет вовсе, и имя появилось из текста traceback'а.
 
 Раскладка, по которой считается мера: 31 файл, 22 класса макета (`cfg_files_by_kind`); класс `files` —
-все 31 файл. Числа замера сверены с независимым счётчиком гейта (`counts_match`, строки 161-168).
+все 31 файл. Числа замера сверены с независимым счётчиком раскладки гейта (`counts_match`, строки
+164-171): 22 класса против 22, расхождений ноль. Счётчик читателя `p1c.load` считает другое — манифест
+фактически открытых файлов (`model.read_files`), и он даёт 30 файлов: не прочитан ровно
+`Configuration.xml`. Об этом §5 и §12.
 
 ## 2. Матрица прогонов: код возврата, находки, покрытие
 
 | прогон | команда прогона (ярлыки путей) | код возврата | находок в JSON-отчёте | файлов cfg в JSON-отчёте | имён cfg в JSON-отчёте | имён только как часть пути | хитов только в консоли |
 |---|---|---|---|---|---|---|---|
-| `load-model-dump` | `p1c.load.cli model <dump>` | 0 | 0 | 7 | 14 | 0 | 0 |
-| `load-model-cfg` | `p1c.load.cli model <cfg>` | 0 | 0 | 7 | 14 | 0 | 0 |
+| `load-model-dump` | `p1c.load.cli model <dump>` | 0 | 0 | 30 | 16 | 0 | 0 |
+| `load-model-cfg` | `p1c.load.cli model <cfg>` | 0 | 0 | 30 | 16 | 0 | 0 |
 | `load-forms-dump` | `p1c.load.cli forms <dump>` | 0 | 0 | 4 | 4 | 0 | 0 |
 | `load-object-catalog` | `p1c.load.cli object catalog.Сотрудники <dump>` | 0 | 0 | 2 | 0 | 0 | 0 |
 | `load-object-wrong-order` | `p1c.load.cli object <dump> catalog.Сотрудники` | 2 | **нет JSON-отчёта** | 0 | 0 | 0 | 0 |
@@ -99,9 +103,22 @@ p1c-load object <вид>.<имя> [корень]`) и `forms-form-wrong-order` (
 Ни один из 18 прогонов ничего не вывел в stdout: сумма `stdout_chars` по всем прогонам 0, потому что
 каждый успешный прогон писал отчёт в файл через `--format json --out reports/toolcov_<ярлык>.json`
 (у `cf-info-cfg-dir` этих флагов нет вовсе — см. §8). Строка `[context] XML разобран: объектов 8,
-форм 2, модулей к сканированию 18` стоит в stderr 11 прогонов из 18; у семи её нет (`graph-build-dump`,
+форм 2, модулей к сканированию 20` стоит в stderr 11 прогонов из 18; у семи её нет (`graph-build-dump`,
 `graph-roots-dump`, `metrics-top-dump`, `forms-events-dump`, `load-object-wrong-order`,
 `forms-form-wrong-order`, `cf-info-cfg-dir`), у `diff-model-cfg-dump` она встречается дважды.
+
+Число 20 — это очередь модулей читателя (`module_jobs` в `p1c/src/p1c/load/reader.py:920`, её длина
+печатается в строке `reader.py:1118`), а не число `.bsl`-файлов на диске: из 20 слотов на диске лежат
+8 — ровно те 8 `.bsl`, которые есть и в `<cfg>`, и в `<dump>`; остальные 12 указывают на модули,
+которых в раскладке нет. Очередь замерена напрямую: `p1c.load.reader.load_configuration_model` вызвана
+на `<dump>` с подменённым `p1c.load.scan.scan_one` (`probe/reader_module_queue.py`, артефакт
+`reports/reader-module-queue.txt`), и аргументы этой подмены и есть содержимое очереди — 20 путей. Разложение: 17 слотов модулей объектов
+(7 `ManagerModule.bsl`, 5 `ObjectModule.bsl`, 2 `RecordSetModule.bsl` у регистров,
+3 `ValueManagerModule.bsl`) плюс 1 слот общего модуля и 2 слота модулей форм. Прежний замер давал 18:
+слоты модулей форм читатель добавляет только с правки `dcf0112` (`reader.py:980`), до неё модули форм
+в очередь не попадали. Отсутствующие слоты в `skipped_files` не пишутся: `scan_one` на отсутствующем
+файле возвращает `read = False` без ошибки, и такой путь в манифест не попадает
+(`reader.py:1154-1157`, объяснение — `reader.py:857-860`).
 
 Два прогона с кодом 2 — это не «поломанная конфигурация», а форма команды. Правильный порядок
 позиционных аргументов измерен по исходникам CLI: для `load object` и `check.forms form` сначала имя
@@ -117,46 +134,47 @@ p1c-load object <вид>.<имя> [корень]`) и `forms-form-wrong-order` (
 
 | класс макета (гейт `layout_source`) | файлов в cfg | инструментов видят путь файла | инструментов видят имя сущности | инструментов видят имя только как часть пути | какие инструменты (по пути файла) |
 |---|---|---|---|---|---|
-| `accumulation_register` | 1 | 0 | 1 | 0 | **ни один инструмент** |
+| `accumulation_register` | 1 | 1 | 1 | 0 | `load` |
 | `bsl_module` | 8 | 4 | 0 | 0 | `bsl`, `forms`, `load`, `metrics` |
-| `catalog` | 1 | 0 | 3 | 2 | **ни один инструмент** |
-| `common_module` | 1 | 0 | 3 | 0 | **ни один инструмент** |
-| `constant` | 1 | 0 | 1 | 0 | **ни один инструмент** |
-| `data_processor` | 1 | 0 | 2 | 2 | **ни один инструмент** |
-| `document` | 1 | 0 | 2 | 2 | **ни один инструмент** |
-| `enum` | 1 | 0 | 1 | 0 | **ни один инструмент** |
+| `catalog` | 1 | 1 | 3 | 2 | `load` |
+| `common_module` | 1 | 1 | 3 | 0 | `load` |
+| `constant` | 1 | 1 | 1 | 0 | `load` |
+| `data_processor` | 1 | 1 | 2 | 2 | `load` |
+| `document` | 1 | 1 | 2 | 2 | `load` |
+| `enum` | 1 | 1 | 1 | 0 | `load` |
 | `files` | 31 | 4 | 0 | 0 | `bsl`, `forms`, `load`, `metrics` |
 | `form_data` | 2 | 2 | 3 | 2 | `forms`, `load` |
-| `form_descriptor` | 2 | 0 | 3 | 2 | **ни один инструмент** |
+| `form_descriptor` | 2 | 1 | 3 | 2 | `load` |
 | `form_module` | 2 | 4 | 3 | 2 | `bsl`, `forms`, `load`, `metrics` |
-| `information_register` | 1 | 0 | 2 | 1 | **ни один инструмент** |
-| `language` | 1 | 0 | 0 | 0 | **ни один инструмент** |
-| `object_module` | 6 | 2 | 0 | 0 | `bsl`, `metrics` |
+| `information_register` | 1 | 1 | 2 | 1 | `load` |
+| `language` | 1 | 1 | 1 | 0 | `load` |
+| `object_module` | 6 | 3 | 0 | 0 | `bsl`, `load`, `metrics` |
 | `predefined_data` | 1 | 1 | 0 | 0 | `load` |
-| `report` | 1 | 0 | 1 | 0 | **ни один инструмент** |
-| `report_template` | 1 | 0 | 0 | 0 | **ни один инструмент** |
-| `report_template_data` | 1 | 0 | 0 | 0 | **ни один инструмент** |
-| `role` | 2 | 0 | 1 | 0 | **ни один инструмент** |
+| `report` | 1 | 1 | 1 | 0 | `load` |
+| `report_template` | 1 | 1 | 1 | 0 | `load` |
+| `report_template_data` | 1 | 1 | 1 | 0 | `load` |
+| `role` | 2 | 1 | 1 | 0 | `load` |
 | `role_rights` | 2 | 1 | 0 | 0 | `load` |
-| `subsystem` | 1 | 0 | 1 | 3 | **ни один инструмент** |
+| `subsystem` | 1 | 1 | 1 | 3 | `load` |
 
 Артефакт: `reports/toolcov_runs.json` (`matrix_by_kind`, `cfg_files_by_kind`, `cfg_names_by_kind`);
 тот же носитель — `reports/tool-coverage-matrix-18.md`. Классы названы по гейту (`layout_source`),
 число файлов — из замера раскладки.
 
-Из 22 классов: 7 увидены инструментами по пути файла (`bsl_module`, `files`, `form_data`,
-`form_module`, `object_module`, `predefined_data`, `role_rights`), 12 — только по имени сущности
-(`accumulation_register`, `catalog`, `common_module`, `constant`, `data_processor`, `document`, `enum`,
-`form_descriptor`, `information_register`, `report`, `role`, `subsystem`), 3 — ни по пути, ни по имени
-(`language`, `report_template`, `report_template_data`).
+Из 22 классов все 22 увидены инструментами по пути файла — и все 22 тем же инструментом `load`,
+потому что счёт идёт по манифесту прочитанных файлов, а его записи создаёт читатель. Классов,
+увиденных только по имени сущности, и классов, не увиденных ничем, в этом замере ноль; прежняя
+раскладка этих же 22 классов — 7 по пути, 12 только по имени, 3 ничем — относится к замеру
+`gate-15.json` и описана в §11.
 
 Показательно сравнение двух модулей одного и того же объекта. Модуль формы
 (`Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form/Module.bsl`) виден по пути четырьмя инструментами
 (`bsl`, `forms`, `load`, `metrics`) и по имени тремя (`diff`, `graph`, `load`). Модуль объекта
-(`Catalogs/Сотрудники/Ext/ObjectModule.bsl`, класс `object_module`) — только путём и только двумя
-инструментами (`bsl`, `metrics`): ни `load`, ни `diff`, ни `graph`, ни `forms` его в своём отчёте не
-называют. Класс `form_descriptor` (файл `Forms/ФормаЭлемента.xml`, 2 файла) не увиден ни одним
-инструментом по пути, хотя имя формы в отчётах есть.
+(`Catalogs/Сотрудники/Ext/ObjectModule.bsl`, класс `object_module`) — путём тремя инструментами
+(`bsl`, `load`, `metrics`): `load` его называет, потому что открывает как файл манифеста
+(`object_module` 6), а `diff`, `graph` и `forms` его в своём отчёте не называют. Класс
+`form_descriptor` (файл `Forms/ФормаЭлемента.xml`, 2 файла) по пути увиден только `load` — дескриптор
+формы читатель открывает отдельно от её макета.
 
 ## 4. Имена, которые в отчётах встречаются только как часть пути
 
@@ -175,13 +193,21 @@ p1c-load object <вид>.<имя> [корень]`) и `forms-form-wrong-order` (
 
 Три вещи, которые эта таблица объясняет лучше любых рассуждений.
 
-Имя подсистемы `ЭффективностьОтдела` инструментом `load` названо сущностью только после того, как
-читатель стал читать права ролей: в блоках `Rights.xml` это имя записано значением
-(`"name": "Subsystem.ЭффективностьОтдела"`), а не внутри пути, и потому засчитано покрытием. До этих
-правок имя всплывало только как отражённый путь — в `load-model-cfg` (ключ
-`context_effective…config.root`), в `diff-model-cfg-dump` (ключ `old`), в `bsl-check-cfg` (в
-абсолютных путях `file` всех 15 находок) и в `cf-info-cfg-dir` (в тексте traceback'а). Проверено по
-артефактам: в `reports/toolcov_bsl-check-cfg.json` подстрока
+Имя подсистемы `ЭффективностьОтдела` инструментом `load` названо сущностью потому, что в отчёте
+читателя оно стоит значением, а не внутри пути; в замере `gate-16.json` таких мест в
+`reports/toolcov_load-model-dump.json` четыре: `model.subsystems[0].name = "ЭффективностьОтдела"`
+(дескриптор `Subsystems/Имя.xml` читатель открывает с задачи 23),
+`model.roles.СотрудникОтдела.objects[0].name = "Subsystem.ЭффективностьОтдела"`,
+`model.roles.АдминистраторСистемы.objects[1].name = "Subsystem.ЭффективностьОтдела"` и
+`model.roles.АдминистраторСистемы.objects[0].name = "Configuration.ЭффективностьОтдела"` (имя
+конфигурации из тех же `Rights.xml`). Точка после `Subsystem.` или `Configuration.` разделителем пути
+не считается, поэтому все четыре встречи засчитаны покрытием. Две оставшиеся встречи того же имени —
+путь: `model.read_files[16].path` и `model.subsystems[0].path`. В матрице §3 имя подсистемы засчитано
+одним инструментом (`load`), а `bsl`, `cf` и `diff` называют его только как часть пути (§4). До правок
+A1/A2 (замер `gate-14.json`, где класс `role_rights` был слепым) имя всплывало только как отражённый
+путь — в `load-model-cfg` (ключ `context_effective…config.root`), в `diff-model-cfg-dump` (ключ `old`),
+в `bsl-check-cfg` (в абсолютных путях `file` всех 15 находок) и в `cf-info-cfg-dir` (в тексте
+traceback'а). Проверено по артефактам: в `reports/toolcov_bsl-check-cfg.json` подстрока
 `ЭффективностьОтдела` встречается 15 раз и всякий раз внутри пути к файлу, в
 `reports/toolcov_diff-model-cfg-dump.json` — 1 раз как значение `old`.
 
@@ -206,58 +232,66 @@ p1c-load object <вид>.<имя> [корень]`) и `forms-form-wrong-order` (
 
 ```text
 kinds_total 22
-gate_artifact `gate-15.json`
+gate_artifact `gate-16.json`
 tools 8: `bsl`, `cf`, `diff`, `forms`, `graph`, `load`, `metrics`, `sdbl`
 layout_counts_match: want 22 classes, got 22 classes, mismatch 0 (пусто)
-gate_tool_counts_source 12 classes: accumulation_register 1, catalog 1, common_module 1, constant 1, data_processor 1, document 1, enum 1, form_data 2, information_register 1, predefined_data 1, report 1, role_rights 2
-gate_tool_blind_kinds 10: `bsl_module`, `files`, `form_descriptor`, `form_module`, `language`, `object_module`, `report_template`, `report_template_data`, `role`, `subsystem`
+gate_tool_counts_source 22 classes: accumulation_register 1, bsl_module 8, catalog 1, common_module 1, constant 1, data_processor 1, document 1, enum 1, files 30, form_data 2, form_descriptor 2, form_module 2, information_register 1, language 1, object_module 6, predefined_data 1, report 1, report_template 1, report_template_data 1, role 2, role_rights 2, subsystem 1
+gate_tool_blind_kinds 0:
 reader_vs_gate.load-model-cfg: equal_to_gate_tool_counts_source true, diff_reader_vs_gate 0 (пусто)
 reader_vs_gate.load-model-dump: equal_to_gate_tool_counts_source true, diff_reader_vs_gate 0 (пусто)
-kinds seen by path 7: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`, `predefined_data`, `role_rights`
-kinds seen by name only 12: `accumulation_register`, `catalog`, `common_module`, `constant`, `data_processor`, `document`, `enum`, `form_descriptor`, `information_register`, `report`, `role`, `subsystem`
-kinds seen by no tool 3: `language`, `report_template`, `report_template_data`
+kinds seen by path 22: `accumulation_register`, `bsl_module`, `catalog`, `common_module`, `constant`, `data_processor`, `document`, `enum`, `files`, `form_data`, `form_descriptor`, `form_module`, `information_register`, `language`, `object_module`, `predefined_data`, `report`, `report_template`, `report_template_data`, `role`, `role_rights`, `subsystem`
+kinds seen by name only 0:
+kinds seen by no tool 0:
 runs 18, sum of stdout_chars 0
 runs logging the context line 11 of 18
-  [context] XML разобран: объектов 8, форм 2, модулей к сканированию 18
+  [context] XML разобран: объектов 8, форм 2, модулей к сканированию 20
   runs without it: `load-object-wrong-order`, `graph-build-dump`, `graph-roots-dump`, `metrics-top-dump`, `forms-events-dump`, `forms-form-wrong-order`, `cf-info-cfg-dir`
 ```
 
 Артефакты: `reports/toolcov_runs.json` (`layout_counts_match`, `gate_*`, `reader_vs_gate`,
-`kinds_seen_by_*`), `reports/gate-15.json`.
+`kinds_seen_by_*`), `reports/gate-16.json`.
 
 Сверка состава классов сходится: 22 класса замера против независимого счётчика гейта (`layout_counts`)
-— расхождений ноль. Сошлась и сверка читателя с гейтом: `gate-15.json` (шаги `load` 6.0 с, `check`
-2.0 с, `dump` 2.0 с, код возврата 0) посчитан читателем после правок A1/A2 и даёт 12 классов —
-столько же, сколько живой читатель, поэтому `diff_reader_vs_gate` пуст в обоих модельных прогонов.
-Запись прежней сверки сохраняется как запись замеренного прогона: против `gate-14.json` — того же
-гейта по тому же исходнику, но посчитанного читателем **до** правок A1/A2, —
-`equal_to_gate_tool_counts_source` было `false`, а `diff_reader_vs_gate` давало ровно две пары:
-`predefined_data [1, 0]` и `role_rights [2, 0]` (первое число — у читателя, второе — у гейта),
+— расхождений ноль. Сходится и сверка читателя с гейтом: `gate-16.json` (шаги `load` 8.0 с, `check`
+2.0 с, `dump` 2.0 с, код возврата 0) называет все 22 класса `tool_counts_source`, поэтому
+`diff_reader_vs_gate` пуст в обоих модельных прогонов, а `equal_to_gate_tool_counts_source` — `true`.
+Единственное числовое расхождение внутри самого гейта — класс `files`: `tool_counts_source.files = 30`
+против `layout_source.files = 31`; объяснить его можно только одним образом — у манифеста читателя
+нет ровно одной записи, и по количеству отсутствующих файлов это `Configuration.xml` (§1).
+
+Записи прежних сверок сохраняются как запись замеренных прогонов. `gate-15.json` (тот же корпус, читатель
+после правок A1/A2) называл 12 классов, `gate-14.json` (тот же корпус, читатель до правок A1/A2) — 10,
+и против него `equal_to_gate_tool_counts_source` было `false`, а `diff_reader_vs_gate` давало ровно две
+пары: `predefined_data [1, 0]` и `role_rights [2, 0]` (первое число — у читателя, второе — у гейта),
 остальные 10 классов совпадали и по составу, и по количествам, в том числе `form_data 2`.
 
-Слепые классы по гейту — 10 (`tool_blind_kinds` в `gate-15.json`): это ровно 22 минус те 12, которые
-назвал читатель после A1/A2. Из прежних двенадцати (10 классов `tool_counts_source` в `gate-14.json`)
-закрыты четыре: `predefined_data` и `role_rights` — путём файла инструментом `load`, `role` и
-`subsystem` — именем сущности тем же инструментом. Из этих десяти семь закрыты другими инструментами
-матрицы, но не читателем: `bsl_module` (8 файлов), `files` (31) и `object_module` (6) — только по пути
-файла; `form_module` (2) — и по пути, и по имени; `form_descriptor` (2) — только по имени; плюс
-`role` и `subsystem`, которые читатель теперь называет именем. Ни по пути, ни по имени не закрыты три
-класса: `language` (1 файл), `report_template` (1) и `report_template_data` (1). Именно поэтому в
-матрице 7 классов «по пути» и 12 «по имени»: у пяти классов из `PATH_ONLY_KINDS` собственного имени
-сущности нет (`cfg_names_by_kind` содержит 17 ключей — ровно без `bsl_module`, `files`,
-`object_module`, `predefined_data`, `role_rights`).
+Слепых классов по гейту в нынешнем замере ноль: `gate_tool_blind_kinds` пуст — 22 названных против 22
+в счётчике. Прежние замеры дают 10 слепых в `gate-15.json` и 12 в `gate-14.json`. Из десяти прежних
+слепых закрыты все: `predefined_data` и `role_rights` — путём файла инструментом `load` (задачи 21–22),
+`language`, `role`, `subsystem` — дескрипторами `Languages/<Имя>.xml`, `Roles/<Имя>.xml`,
+`Subsystems/<Имя>.xml` (задача 23), `report_template` и `report_template_data` — дескриптором макета и
+его содержимым (задача 25), `bsl_module`, `files`, `object_module`, `form_module` и `form_descriptor` —
+манифестом модулей и дескрипторов форм (задачи 21, 24, 26). В прежнем замере семь из десяти закрывали
+другие инструменты матрицы, а не читатель; теперь все 22 закрывает читатель, потому что счёт идёт по
+манифесту прочитанных файлов.
 
-Права ролей при этом настроены и проверены независимо: гейт `reports/gate-15.json` даёт
+Пять классов не имеют собственного имени сущности: `cfg_names_by_kind` содержит 17 ключей — ровно без
+`bsl_module`, `files`, `object_module`, `predefined_data`, `role_rights` (`PATH_ONLY_KINDS` в
+`probe/tool_coverage.py:109`). В прежнем счёте по ключам модели они и составляли те 7 классов «по пути
+файла», а 12 классов «по имени» и 3 «ничем» — ключи модели, которых теперь нет в записях счётчика
+(§11).
+
+Права ролей при этом настроены и проверены независимо: гейт `reports/gate-16.json` даёт
 `rights.code 0` (`rights_files 2`, `object_blocks 17`, `rights 79`) и `rights_immobility.code 0`
 (`source_blocks 17`, `dump_blocks 17`, `source_rights 79`, `dump_rights 79`, ничего не потеряно и
-ничего не добавлено) — ровно те же числа, что и `gate-14.json`, потому что исходник между этими
-двумя прогонами не менялся. После правок A1/A2 читатель `p1c.load` называет оба файла прав — `role_rights`
-закрыт путём (1 инструмент) и даёт ровно те же числа, что и гейт: 2 роли, 17 блоков прав, 79 прав
-(`Roles/АдминистраторСистемы/Ext/Rights.xml` — 9 блоков и 57 прав,
+ничего не добавлено) — ровно те же числа, что и `gate-15.json`, потому что исходник между этими
+двумя прогонами не менялся. Читатель `p1c.load` называет оба файла прав (`role_rights` 2), даёт ровно
+те же числа, что и гейт (`Roles/АдминистраторСистемы/Ext/Rights.xml` — 9 блоков и 57 прав,
 `Roles/СотрудникОтдела/Ext/Rights.xml` — 8 блоков и 22 права), и одну запись предопределённых данных
 `catalog.Сотрудники` с 6 строками. Дескрипторы ролей (`Roles/АдминистраторСистемы.xml`,
-`Roles/СотрудникОтдела.xml`) по-прежнему не прочитаны ни одним инструментом: у класса `role` ноль
-по пути файла.
+`Roles/СотрудникОтдела.xml`) с задачи 23 прочитаны и названы классом `role` (2), поэтому у этого класса
+в матрице §3 стоит 1 инструмент по пути; описание роли при этом ограничено именем, синонимом и
+комментарием (§10 пункт 1).
 
 Подпись контекста в 15 написанных JSON-отчётах приняла ровно два значения:
 `d8d5d85c4c154616…` у 14 прогонов (модель взята из `<work>\dump`) и `39a6a09601089858…` у единственного
@@ -275,11 +309,18 @@ load-model-dump  (exit 0)
   model.common_forms = 0
   model.common_modules = 1: `РасчётПоказателей`
   model.enums = 1: `ГрейдыСпециалистов`
+  model.form_descriptors = 2: `ФормаЭлемента`, `ФормаВыгрузки`
   model.global_functions = 0
+  model.languages = 1: `Русский`
   model.objects = 8: `accumulation_register.ЗатратыВремени`, `catalog.Сотрудники`, `constant.НормаЧасовВМесяц`, `data_processor.ВыгрузкаЗатратCSV`, `document.ФактРаботы`, `enum.ГрейдыСпециалистов`, `information_register.ПланЗагрузки`, `report.ОтчётЗагрузки`
   model.predefined_data = 1: `catalog.Сотрудники`
+  model.read_files = 30: accumulation_register 1, catalog 1, common_module 1, constant 1, data_processor 1, document 1, enum 1, form_data 2, form_descriptor 2, form_module 2, information_register 1, language 1, object_module 6, predefined_data 1, report 1, report_template 1, report_template_data 1, role 2, role_rights 2, subsystem 1
+  model.role_descriptors = 2: `АдминистраторСистемы`, `СотрудникОтдела`
   model.roles = 2: `АдминистраторСистемы`, `СотрудникОтдела`
   model.skipped_files = 0
+  model.subsystems = 1: `ЭффективностьОтдела`
+  model.template_data = 1: `ОсновнаяСхемаКомпоновкиДанных`
+  model.templates = 1: `ОсновнаяСхемаКомпоновкиДанных`
 
 load-model-cfg  (exit 0)
   keys: `model`
@@ -288,11 +329,18 @@ load-model-cfg  (exit 0)
   model.common_forms = 0
   model.common_modules = 1: `РасчётПоказателей`
   model.enums = 1: `ГрейдыСпециалистов`
+  model.form_descriptors = 2: `ФормаЭлемента`, `ФормаВыгрузки`
   model.global_functions = 0
+  model.languages = 1: `Русский`
   model.objects = 8: `accumulation_register.ЗатратыВремени`, `catalog.Сотрудники`, `constant.НормаЧасовВМесяц`, `data_processor.ВыгрузкаЗатратCSV`, `document.ФактРаботы`, `enum.ГрейдыСпециалистов`, `information_register.ПланЗагрузки`, `report.ОтчётЗагрузки`
   model.predefined_data = 1: `catalog.Сотрудники`
+  model.read_files = 30: accumulation_register 1, catalog 1, common_module 1, constant 1, data_processor 1, document 1, enum 1, form_data 2, form_descriptor 2, form_module 2, information_register 1, language 1, object_module 6, predefined_data 1, report 1, report_template 1, report_template_data 1, role 2, role_rights 2, subsystem 1
+  model.role_descriptors = 2: `АдминистраторСистемы`, `СотрудникОтдела`
   model.roles = 2: `АдминистраторСистемы`, `СотрудникОтдела`
   model.skipped_files = 0
+  model.subsystems = 1: `ЭффективностьОтдела`
+  model.template_data = 1: `ОсновнаяСхемаКомпоновкиДанных`
+  model.templates = 1: `ОсновнаяСхемаКомпоновкиДанных`
 
 load-forms-dump  (exit 0)
   keys: `count`, `forms`
@@ -476,6 +524,7 @@ forms-form-element  (exit 0)
   skipped_rules: `execution_context` (`нет контекста: execution_context`), `os_compat` (`нет контекста: target_os`), `tests` (`правило отключено`)
   form.attributes 2
   form.commands 1
+  form.exports 0 (пусто)
   form.items 6
   form.kind `catalog`
   form.module `Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form/Module.bsl`
@@ -632,8 +681,11 @@ zzz-netakogo-vida        exit 0  count 26  AfterWrite=False BeforeWrite=False
 13 ссылок на поля и все 13 разрешены (`field_ok 13`), 3 имени объектов разрешены (`name_object 3`,
 `name_object_ok 3`), `results []`. Ни один из этих прогонов не прочитал сам файл макета
 `Reports/ОтчётЗагрузки/Templates/ОсновнаяСхемаКомпоновкиДанных/Ext/Template.xml` (в матрице §2 у обоих
-`sdbl`-прогонов 0 путей): текст запроса из SKD-шаблонов читает обход `*.bsl`-модулей
-(`p1c/src/p1c/check/sdbl/cli.py:145-157`, `rglob("*.bsl")` — строка 151), а не макеты компоновки данных.
+`sdbl`-прогонов 0 путей): текст запроса в прогон `query` передаёт сам замер — `probe/tool_coverage.py`
+достаёт `<query>` из файла макета (`:213-219`) и подаёт его позиционным аргументом
+(`p1c/src/p1c/check/sdbl/cli.py:347` — `args.query_text = args.rest[0]`), а обход `check` строится по
+списку файлов `_files` (`p1c/src/p1c/check/sdbl/cli.py:151-160`, `rglob("*.bsl")` — строка 157) и
+макеты компоновки данных не читает.
 
 Два прогона с кодом 2 стоят отдельно и служат контролем порядка токенов: у `load object` и
 `check.forms form` корень должен идти после имени, и в обратном порядке CLI распознаёт первый
@@ -652,7 +704,7 @@ cf-info-cfg-dir  (exit 2, нет JSON-отчёта)
 `reports/toolcov_summary.txt`): `Книга .cf ожидается файлом, а передан каталог: <cfg>`. Отдельного
 JSON-отчёта нет, потому что у подкоманды `cf info` нет флагов `--format` и `--out` — они есть только у
 `extract`, `set` и `normalize` (`p1c/src/p1c/cf/cli.py:171-184` и `:187-212`), поэтому прогон шёл с
-`writes_report: False` (`probe/tool_coverage.py:89`).
+`writes_report: False` (`probe/tool_coverage.py:92`).
 
 Наша конфигурация — xml-выгрузка из каталога, `.cf`-файла у неё нет; `cf` ждёт файл книги. Передан
 каталог `cfg\ЭффективностьОтдела`. Нынешняя правка проверяет это до обращения к читателю книги:
@@ -826,21 +878,32 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
 
 ## 10. Следствие для инструментов p1c
 
-1. **Права ролей теперь читает только один инструмент, и то через модель.** 2 файла
-   `Roles/*/Ext/Rights.xml`, 17 блоков объектов и 79 прав подтверждены гейтом (`rights.immobile`,
-   код 0), и ровно те же числа даёт `p1c.load model` после правки A1: `model.roles` — 2 записи,
-   17 блоков, 79 прав (в cfg и в выгрузке). Класс `role_rights` закрыт путём файла инструментом
-   `load` (1 из 8), класс `role` — дескрипторы `Roles/<Имя>.xml` — по-прежнему ноль по обеим мерам:
-   роль как объект метаданных (её тип, длина имени, права по умолчанию) в отчётах не описана.
-2. **Предопределённые данные закрыты тем же читателем, макеты и язык — нет.** `predefined_data`
-   закрыт путём файла (`load`, 1 из 8) и даёт 1 запись с 6 строками. Имя подсистемы
-   `ЭффективностьОтдела` после правки названо сущностью (оно лежит значением в блоке прав
-   `Subsystem.ЭффективностьОтдела`), но отдельного ключа подсистем в модели нет. Ни по пути, ни по
-   имени не закрыты три класса: `language`, `report_template`, `report_template_data`. Наш SKD-запрос
-   лежит в `Templates/*/Ext/Template.xml`, и `p1c.check.sdbl` его не читает (§7) — он проверил 3
-   запроса только потому, что они написаны в `.bsl`-модулях.
-3. **Модули уровня конфигурации не доходят до читателя.** `object_module` (6 файлов) виден по пути двум
-   инструментам из восьми; `load`, `diff`, `graph`, `forms` путей модулей объекта в отчётах не называют.
+1. **Права ролей читает один инструмент, и то через модель; дескрипторы ролей — тот же инструмент, но
+   только как файлы.** 2 файла `Roles/*/Ext/Rights.xml`, 17 блоков объектов и 79 прав подтверждены гейтом
+   (`rights_immobility.code 0` в `reports/gate-16.json`), и ровно те же числа даёт `p1c.load model`:
+   `model.roles` — 2 записи, 17 блоков, 79 прав (в `<cfg>` и в `<dump>`). Класс `role_rights` закрыт путём
+   файла инструментом `load` (1 из 8). Класс `role` с задачи 23 тоже закрыт `load`: `model.role_descriptors`
+   — 2 записи с `name`, `synonym`, `comment` и путём дескриптора. Это ровно те три поля, которые есть в
+   самом дескрипторе (`Roles/СотрудникОтдела.xml` — 1194 символа, в `<Properties>` только `Name`, `Synonym`
+   и `Comment`); права роли лежат в `Ext/Rights.xml`, и ни один инструмент кроме `load` ни дескриптор, ни
+   файл прав не называет.
+2. **Подсистемы, языки, макеты и их содержимое закрыты тем же читателем — но без проверки содержимого.**
+   `model.subsystems` — 1 запись с `content` из 9 позиций (в том числе `CommonModule.РасчётПоказателей`),
+   `model.languages` — 1 запись с `language_code = ru`, `model.templates` — 1 запись с
+   `template_type = DataCompositionSchema`, и её содержимое — `model.template_data` с 1 вычисляемым полем
+   (`КоэффициентЗагрузки`), 1 набором данных (6 полей, запрос 1097 символов) и ключами `data_sources`,
+   `kind`, `name`, `object`, `path`. Имя подсистемы названо сущностью в четырёх местах отчёта (§4). Проверки
+   этому содержимому нет: `p1c.check.sdbl` макет не читает (§7), поэтому SKD-запрос `ОтчётЗагрузки` в
+   3 проверенных запроса не вошёл — проверены только запросы, написанные в `.bsl`-модулях.
+3. **Модули доходят до читателя как файлы, но не как сущности.** `object_module` (6 файлов) назван и
+   читателем: это 5 модулей объектов в `Ext/` плюс `CommonModules/РасчётПоказателей/Ext/Module.bsl` — общий
+   модуль и модули форм получили в манифесте собственные таксоны (`common_module` 1, `form_module` 2), а
+   модули объектов делят таксон с независимым счётчиком раскладки. Путём такой файл виден тремя
+   инструментами (`bsl`, `load`, `metrics`); `diff`, `graph` и `forms` путей модулей объекта в отчётах не
+   называют. Отдельной записи «модуль» в модели нет: экспорты модулей объектов лежат в записях самих
+   объектов (`manager_methods`, `object_methods`, `record_methods` — `p1c/src/p1c/load/reader.py:1185-1195`),
+   у общего модуля есть `spec["exports"]` (`reader.py:1210`), у формы — `form["exports"]`
+   (`reader.py:1167-1169`, правка `dcf0112`).
 4. **Справочник событий формы в `p1c` есть, но команды им не пользуются.** `check.forms form` оставляет
    `kind` и `owner` пустыми у всех трёх обработчиков `ФормаЭлемента`, хотя `form.kind` в том же отчёте —
    `catalog`. `check.forms events` без `--kind` перечисляет 26 событий только базовой страницы
@@ -854,9 +917,14 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
    (`--kind zzz-netakogo-vida`) даёт ровно то же, что отсутствующий флаг: `exit 0`, базовая страница и 26
    имён при пустом `stderr`.
 5. **Модель `p1c.load` не представляет часть конфигурации**, поэтому её «полнота» не равна полноте
-   раскладки: 12 классов из 22 по счётчику читателя (`reader_kind_counts`) и те же 12 в счётчике
-   гейта `gate-15.json`; прежний прогон того же гейта (`gate-14.json`) считался читателем до правок
-   A1/A2 и давал 10 классов.
+   раскладки: по счётчику читателя (`reader_kind_counts`) названо 22 класса из 22 счётчика
+   `gate-16.json`; прежние прогоны того же гейта давали 12 классов (`gate-15.json`, читатель после правок
+   A1/A2) и 10 классов (`gate-14.json`, тот же гейт, посчитанный читателем до этих правок). Из закрытого
+   в модельном содержимом предопределённых данных (`predefined_data` — 1 запись `catalog.Сотрудники` с
+   6 строками) проверка не извлекает ничего: `check.bsl` и `check.sdbl` этих строк не видят. Три вида
+   файлов, названных планом, в этом корпусе отсутствуют — папок `CommonPictures`, `SettingsStorages` и
+   `SessionParameters` в `cfg\ЭффективностьОтдела` нет (проверяется списком каталога: 12 папок и
+   `Configuration.xml`), поэтому они не закрыты ничем и проверить их на этом корпусе нельзя.
 6. **Код возврата не сообщает, что было прочитано**: `check.sdbl` и `check.forms` дают 0 с пустым
    `results` при непустом `stats`, `cf` отвечает код 2 о неверном аргументе без отчёта, два прогона
    дают 2 без отчёта.
@@ -881,9 +949,13 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
    `roles`, `subsystems`, `languages`, `session_parameters`, `templates`; иначе классы `role`,
    `role_rights`, `predefined_data`, `subsystem`, `language`, `report_template`, `report_template_data`
    останутся слепыми. Сделано (итерация 11): `roles` и `predefined_data` — закрыты, чтение обоих
-   классов файлов добавлено; `subsystems`, `languages`, `session_parameters`, `templates` — не
-   добавлены, и три класса (`language`, `report_template`, `report_template_data`) по-прежнему не
-   закрыты ни одним инструментом.
+   классов файлов добавлено. Сделано (итерация 13, задачи 23 и 25): добавлены чтение
+   `Languages/<Имя>.xml`, `Subsystems/<Имя>.xml`, `Roles/<Имя>.xml`,
+   `<объект>/Forms/<Имя>.xml`, `<объект>/…/Templates/<Имя>.xml` и `Templates/<Имя>/Ext/Template.xml` и
+   ключи модели `languages`, `subsystems`, `role_descriptors`, `form_descriptors`, `templates`,
+   `template_data`; классы `language`, `role`, `subsystem`, `report_template`, `report_template_data`
+   закрыты. `session_parameters` в модель не добавлен: папки `SessionParameters` в раскладке корпуса нет
+   (§10, пункт 5).
 2. Сделать страницу расширения формы видом по умолчанию, а не флагом: `check.forms events` без `--kind`
    должен принимать вид формы, а `check.forms form` — заполнять `kind`/`owner` по `form.kind`. Данные для
    этого уже есть: `OBJECT_PAGE` (`p1c/src/p1c/check/forms/checks.py:42+`) и `EVENT_SIGNATURES`
@@ -894,12 +966,22 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
    `AfterWrite`/`BeforeWrite`/`OnWrite` в этих данных записаны. И переданное `--kind` имя надо проверять по
    `OBJECT_PAGE`: `zzz-netakogo-vida` даёт `exit 0` и те же 26 имён при пустом `stderr` (§7).
 3. Включить в отчёты модели `p1c.load` пути модулей уровня конфигурации (`Ext/ObjectModule.bsl`,
-   `Ext/ManagerModule.bsl`) — сейчас их видят только `bsl` и `metrics`.
+   `Ext/ManagerModule.bsl`) — сейчас их видят только `bsl` и `metrics`. Сделано (итерация 13, задачи 21 и
+   26): модель возвращает `read_files` — пары «путь + класс» для каждого фактически открытого файла, и
+   матрица считает по нему, поэтому `object_module` (6 файлов) и `common_module` (1) названы ещё и
+   инструментом `load` (в матрице §3 — 3 и 1 инструмента по пути). Осталось незакрытым: отдельного ключа
+   модели для модуля уровня конфигурации нет — содержимое этих модулей приходит в модель как экспорты
+   объектов и общих модулей (§10, пункт 3).
 4. Считать обход `*.bsl` в `check.sdbl` полным обходом макетов тоже: читать `<query>` из
    `Templates/*/Ext/Template.xml` и `CommonForms`/`Forms/*/Ext/Form.xml` наряду с модулями. Сейчас обход
-   строится из `queries_in_module(ctx)` (`p1c/src/p1c/check/sdbl/cli.py:145`), который берёт
-   `ctx.modules()` (`:148`), а счётчик `files_read` (`:150`) считает те же модули с пометкой `src_bsl`
-   (`:154`); SKD-запросы в этот обход не попадают (§7).
+   `check` берёт список файлов `_files(args, context)` (`p1c/src/p1c/check/sdbl/cli.py:151-160`,
+   `rglob("*.bsl")` — строка 157), проходит по нему (`cmd_check`, `:213`) и считает те же файлы в
+   `stats["files"]` (`:237`); подкоманда `query` читает не файл, а текст запроса из позиционного
+   аргумента (`:347`), поэтому SKD-макеты в этот обход не попадают (§7). Сделано наполовину
+   (итерация 13, задача 25):
+   содержимое `Templates/<Имя>/Ext/Template.xml` читает читатель модели и складывает его в
+   `model.template_data` (1 набор данных, 6 полей, запрос 1097 символов), но `check.sdbl` этого ключа не
+   читает: обход идёт по `.bsl`-модулям, и SKD-запрос отчёта в 3 проверенных запроса не вошёл.
 5. Разрешать поля виртуальных таблиц регистра (`skip_vt_no_help_fields`, `skip_field_fields_unknown`) по
    данным метаданных выгрузки: описания полей `ЗатратыВремени` и `ПланЗагрузки` есть в
    `AccumulationRegisters/ЗатратыВремени.xml` и `InformationRegisters/ПланЗагрузки.xml`, и модель их уже
@@ -986,40 +1068,81 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
 (`language`, `report_template`, `report_template_data`) по-прежнему не закрыты ни по пути, ни по имени;
 `role` закрыт именем сущности, но не путём файла — дескриптор `Roles/<Имя>.xml` читателем не читается.
 Изменилось то, что числам гейта теперь можно верить как живым: `tool_counts_source` 12 классов,
-`tool_blind_kinds` 10. Матрица после смены артефакта (`probe/tool_coverage.py:56 GATE_ARTIFACT`)
+`tool_blind_kinds` 10. Матрица после смены артефакта (`GATE_ARTIFACT`, `probe/tool_coverage.py:56` в том
+замере, ныне `:59`)
 переснята теми же 18 прогонами восьми инструментов без запуска платформы и даёт те же 7 / 12 / 3 из
 22 классов; изменились ровно семь строк блока §5 — ярлык артефакта, `gate_tool_counts_source`,
 `gate_tool_blind_kinds` и обе строки `reader_vs_gate`.
 
+Статус к итерации 13 (читатель `p1c.load` + манифест прочитанных файлов). Пункт 1 закрыт целиком, кроме
+`session_parameters`: папок `SessionParameters`, `SettingsStorages` и `CommonPictures` в раскладке корпуса
+нет, и на этом корпусе их закрыть нельзя. Пункт 3 закрыт: пути модулей уровня конфигурации называет сам
+читатель. Пункт 4 закрыт со стороны читателя (`model.template_data`), но не со стороны `check.sdbl`.
+Счётчик матрицы перестроен на манифест: `GATE_ARTIFACT = "gate-16.json"` (`probe/tool_coverage.py:59`),
+классы берутся из пар `model.read_files` (§1), счёт по ключам модели из кода замера удалён. Платформа 1С
+в этой итерации запускалась один раз — `gate-16.json` (шаги `load` 8.0 с, `check` 2.0 с, `dump` 2.0 с,
+код возврата 0, без `--allow-mutating`), и в том же прогоне сверена неподвижность прав
+(`rights_immobility.code 0`). Обходов корпусов не было. Различие `gate-16.json` с `gate-15.json` — ровно
+четыре ключа: `steps`, `tool_counts_source`, `tool_counts_dump`, `tool_blind_kinds`. Что изменилось в
+артефактах:
+
+| что меряется | прежний замер (артефакт `gate-15.json`, 18 прогонов) | нынешний замер (артефакт `gate-16.json`, 18 прогонов) |
+|---|---|---|
+| классы, закрытые хотя бы одним инструментом по пути файла | 7 из 22 | 22 из 22 |
+| классы, закрытые только именем сущности | 12 | 0 |
+| классы, не закрытые ни по пути, ни по имени | 3 | 0 |
+| `tool_counts_source` у гейта | 12 классов | 22 класса |
+| `tool_blind_kinds` у гейта | 10 классов | пусто |
+| файлов cfg в отчёте `load-model-cfg` и `load-model-dump` | 7 и 7 | 30 и 30 |
+| имён cfg в отчёте этих же прогонов | 14 и 14 | 16 и 16 |
+| `language`, `role`, `subsystem` по пути файла | 0, 0, 0 инструмента | 1 (`load`), 1 (`load`), 1 (`load`) |
+| `report_template`, `report_template_data` | 0 и 0 инструмента | 1 (`load`) и 1 (`load`) |
+| `form_descriptor` по пути файла | 0 инструмента | 1 (`load`) |
+| `object_module` по пути файла | 2 (`bsl`, `metrics`) | 3 (`bsl`, `load`, `metrics`) |
+| файлов в классе `files` у независимого счётчика раскладки и у манифеста | 31 и 31 | 31 и 30 |
+| строка `[context] … модулей к сканированию` | 18 | 20 |
+
+Причина последнего различия разобрана в §1: у манифеста нет ровно одной записи — `Configuration.xml`,
+единственного файла корня раскладки, который читатель не открывает как файл метаданных. Рост очереди
+модулей с 18 до 20 — слоты модулей форм, которые читатель добавляет с правки `dcf0112` (§2).
+
 ## 12. Честная граница меры
 
-- Матрица мерит то, что инструмент **назвал** в своём отчёте или консоли. Она не мерит, что именно
-  инструмент прочитал с диска: путь мог появиться из напечатанного аргумента, а имя — из строки
-  контекста. Именно поэтому имена вплотную к `/` вынесены отдельно (§4), а хиты консоли — отдельно от
-  хитов отчёта.
+- Матрица мерит то, что инструмент **назвал** в своём отчёте или консоли. Кроме одного случая — счёт
+  классов манифеста (`model.read_files` в отчётах `p1c.load`): это записью фиксировано, что читатель
+  действительно открыл с диска (§1). Остальные меры остаются мерами называния: путь мог появиться из
+  напечатанного аргумента, а имя — из строки контекста. Именно поэтому имена вплотную к `/` вынесены
+  отдельно (§4), а хиты консоли — отдельно от хитов отчёта.
 - Матрица мерит покрытие восьми инструментов по 18 командам, не по всем подкомандам `p1c`.
   Модифицирующие подкоманды `cf set` и `cf normalize` в замер не включены; подкоманды, которые
   требовали бы запуска платформы, в этом замере не участвовали вовсе.
 - Мера не утверждает, что прочитанное содержимое корректно: `p1c.metrics` прочитал 7 файлов модулей, а
-  имя сущности в его отчёте ровно одно; `p1c.load` назвал 12 классов из 22. Числа колонки «имён cfg» — это
-  имена, которые встречаются в отчёте, а не оценка полноты.
+  имя сущности в его отчёте ровно одно; `p1c.load` назвал 22 класса из 22 — но это классы **открытых
+  файлов**, а не утверждение, что их содержимое разобрано: дескрипторы макета и языка дают только имя,
+  синоним и путь (§10, пункт 2). Числа колонки «имён cfg» — это имена, которые встречаются в отчёте, а
+  не оценка полноты.
 - Две численные меры одного артефакта не сравниваются напрямую. Колонки §2 — **различные** пути и
-  **различные** имена внутри прогона (`probe/tool_coverage.py:411-413`: пути и имена собираются в
+  **различные** имена внутри прогона (`probe/tool_coverage.py:414-416`: пути и имена собираются в
   множество по всем классам, повтор не считается),
-  поэтому у модельных прогонов 7 файлов и 14 имён. Счётчик читателя в §5 — число **классов**, которые
-  читатель назвал (`reader_kind_counts`), у него 12. Сводка, которую печатает консоль замера, — суммы
-  хитов по классам (`probe/tool_coverage.py:518-519`), и это третья величина.
-- Матрица §2, §3, §4 и §5 переснята после правок A1/A2 читателя `p1c.load` и соответствует нынешним
-  артефактам `reports/toolcov_*.json` и `reports/gate-15.json`. Прежние числа (4 файла и 11 имён у
-  модельных прогонов, 5 / 10 / 7 классов по трём категориям, код 1 и traceback у `cf-info-cfg-dir`,
-  `reader_vs_gate` с двумя различиями) сохранены только как запись прежнего замера: в таблице статуса
-  §11 и в блоке «до правки» §8. Артефакт `reports/gate-14.json` при этом не перезаписывался: он на
-  диске остаётся записью того же гейта, посчитанного читателем до правок A1/A2.
+  поэтому у модельных прогонов 30 файлов и 16 имён. Счётчик читателя в §5 — число **классов**
+  манифеста, которые читатель назвал (`reader_kind_counts`), у него 22. Сводка, которую печатает консоль
+  замера, — суммы хитов по классам (`probe/tool_coverage.py:518` и `:521-524`), и это третья величина.
+- Матрица §2, §3, §4 и §5 переснята после правок читателя `p1c.load` (итерации 12–13) и соответствует
+  нынешним артефактам `reports/toolcov_*.json` и `reports/gate-16.json`. Прежние числа (4 файла и 11 имён
+  у модельных прогонов, 7 / 12 / 3 класса по трём категориям в замере `gate-15.json`, 5 / 10 / 7 в замере
+  `gate-14.json`, код 1 и traceback у `cf-info-cfg-dir`, `reader_vs_gate` с двумя различиями) сохранены
+  только как запись прежних замеров: в таблицах статуса §11 и в блоке «до правки» §8. Артефакты
+  `reports/gate-14.json` и `reports/gate-15.json` при этом не перезаписывались: они на диске остаются
+  записью того же гейта, посчитанного читателем до правок A1/A2 и до правок итерации 13.
 - `context_signature` и `context_effective` из отчётов в таблицы и блоки содержимого не переносится
   (`probe/render_query_tables.py::SKIP_REPORT_KEYS`), чтобы абсолютные пути не попадали в документ;
   числа подписей в §5 приведены по первым 16 шестнадцатеричным разрядам значений из артефактов.
 - Строки исходника в таблице §9 — дословный текст из файлов `cfg`; колонка «строка» — номер строки,
   который сообщил инструмент, а не выверенный нами.
-- Ни одно утверждение этого документа не опирается на запуск платформы 1С: все 18 прогонов — вызовы
-  Python-модулей `p1c` и обход каталога; корпусные замеры §9 — ripgrep по `*.bsl` и размеры файлов
-  (`stat`), содержимое 214 модулей крупнее лимита в корпусах не читалось ни в одном из замеров.
+- Ни один из 18 прогонов матрицы не запускает платформу 1С: это вызовы Python-модулей `p1c` и обход
+  каталога. Числа §5 опираются на артефакты гейта, а они — записи прогонов платформы (`gate-16.json`:
+  `load`, `check`, `dump`; `gate-15.json` и `gate-14.json`: те же три шага), и в этих прогонах раскладка
+  не менялась: модифицирующих флагов не передавалось, `dump_files` и `dump_fresh_files` — 32 файла,
+  `diff_files` пуст. Корпусные замеры §9 — ripgrep по `*.bsl` и размеры файлов (`stat`), содержимое 214
+  модулей крупнее лимита в корпусах не читалось ни в одном из замеров.
+

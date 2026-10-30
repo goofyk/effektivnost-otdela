@@ -22,10 +22,10 @@
 | --- | --- | --- | --- |
 | A1 | Читать `Roles/*/Ext/Rights.xml`: отдавать по роли список объектов с правами (`Вид`, `Доступ`), значение только из файла | новый читатель прав в `load/reader.py`; сейчас прав нет ни в одном отчёте | на нашей cfg: 2 роли, 17 блоков, 79 прав (канон `docs/canonical-rights.json`); сравнить с `rights_immobility` гейта (17/79) |
 | A2 | Читать предопределенные данные (`Ext/Predefined.xml`) как список строк с uuid и представлением | `load/reader.py` (сейчас не читает `Templates`, предопределенные данные, `CommonPictures`, `SettingsStorages`, `SessionParameters`, `Roles`, `SubSystems`, `Languages`) | `layout_source.predefined_data 1`; expect 1 файл и его строки |
-| A3 | Читать `Languages/Русский.xml`, `SubSystems/*.xml`, `CommonPictures`, `SettingsStorages`, `SessionParameters` | тот же reader | `gate-14.json` → `layout_source`: `language 1`, `subsystem 1`; в `cfg` их сейчас нет для `CommonPictures`/`SettingsStorages`/`SessionParameters` — добавить их в конфигурацию (итерация 9), чтобы мерить |
-| A4 | `Templates` и их содержимое: отдельно класс шаблона и отдельно текст SKD | `load/reader.py` + `check/sdbl/cli.py:145-154` | `report_template 1`, `report_template_data 1`; `sdbl query` уже даёт `queries 1` |
-| A5 | Называть класс прочитанного файла в отчёте (на замеренном прогоне 5 классов видны только путём: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`; после A1/A2 их 7 — добавились `predefined_data` и `role_rights`) | `load/reader.py` (поле `kind` у записи модели) | матрица: `kinds_seen_by_path` 5 → 7, цель 22 |
-| A6 | Отдельная подкоманда `load config` (или поля в `load model`) для модулей уровня конфигурации: `Ext/SessionModule.bsl`, `Ext/ManagedApplicationModule.bsl`, `Ext/OrdinaryApplicationModule.bsl`, `Ext/ExternalConnectionModule.bsl`, `Ext/CommandInterface.xml`, `Ext/HomePageWorkArea.xml` | `load/cli.py`, `load/reader.py` | итерация 9 добавляет эти файлы в cfg; после этого прогон обязан дать по одному хиту на файл |
+| A3 | Читать `Languages/Русский.xml`, `SubSystems/*.xml`, `CommonPictures`, `SettingsStorages`, `SessionParameters` — **закрыто наполовину (итерация 13, задачи 22–23)**: первые два читаются и называются, трёх остальных групп в `cfg` нет | тот же reader | `gate-16.json` → `tool_counts_source`: `language 1`, `subsystem 1` (путь `Languages/Русский.xml`, `Subsystems/ЭффективностьОтдела.xml`); в `cfg` их сейчас нет для `CommonPictures`/`SettingsStorages`/`SessionParameters` — добавить их в конфигурацию (итерация 9), чтобы мерить |
+| A4 | `Templates` и их содержимое: отдельно класс шаблона и отдельно текст SKD — **закрыто (итерация 13, задача 25)** | `load/reader.py` + `check/sdbl/cli.py` | `report_template 1`, `report_template_data 1` в модели и в манифесте; `sdbl query` даёт `queries 1` на тексте запроса из `Schema.dcsset` |
+| A5 | Называть класс прочитанного файла в отчёте (на замеренном прогоне 5 классов видны только путём: `bsl_module`, `files`, `form_data`, `form_module`, `object_module`; после A1/A2 их 7 — добавились `predefined_data` и `role_rights`) — **закрыто (итерация 13, задачи 21–26)**: класс называется манифестом `model.read_files` | `load/reader.py` (манифест `read_files`: пара `path`/`kind` в точке открытия) | матрица: `kinds_seen_by_path` 5 → 7 → 22, `kinds_seen_by_no_tool` 7 → 3 → 0 |
+| A6 | Отдельная подкоманда `load config` (или поля в `load model`) для модулей уровня конфигурации: `Ext/SessionModule.bsl`, `Ext/ManagedApplicationModule.bsl`, `Ext/OrdinaryApplicationModule.bsl`, `Ext/ExternalConnectionModule.bsl`, `Ext/CommandInterface.xml`, `Ext/HomePageWorkArea.xml` — **открыта и отложена (итерация 13)**: этих файлов в `cfg` нет | `load/cli.py`, `load/reader.py` | итерация 9 добавляет эти файлы в cfg; после этого прогон обязан дать по одному хиту на файл |
 
 **Метрика блока:** `tool_blind_kinds` 12 → 0; `kinds_seen_by_no_tool` 7 → 0.
 
@@ -43,6 +43,27 @@
 добавлены; дескрипторы `Roles/<Имя>.xml` никто не открывает — класс `role` закрыт именем роли, но не
 путём файла. Из 10 слепых классов гейта `gate-15.json` три (`language`, `report_template`,
 `report_template_data`) не закрыты ни путём, ни именем.
+
+Статус блока A к итерации 13. A3 закрыта ровно наполовину: `Languages/Русский.xml` и
+`Subsystems/ЭффективностьОтдела.xml` читателем открываются и названы (`languages` 1 запись с
+`language_code ru`, `subsystems` 1 запись с содержимым из 9 позиций), а `CommonPictures`,
+`SettingsStorages` и `SessionParameters` остаются незакрытыми и на этом корпусе неизмеримыми —
+таких папок в `cfg` нет (12 папок и файл `Configuration.xml`). A4 закрыта: класс шаблона и его
+содержимое разделены — `report_template` (путь
+`Reports/ОтчётЗагрузки/Templates/ОтчётПоЗатратам.xml`, `template_type DataCompositionSchema`) и `report_template_data`
+(путь `…/Templates/ОтчётПоЗатратам/Schema.dcsset`: 1 набор данных из 6 полей, 1 вычисляемое поле,
+текст запроса 1097 символов из того же файла). A5 закрыта: класс прочитанного файла называется
+манифестом `model.read_files` (`{"path", "kind"}`) в точке фактического открытия файла парсером, и
+матрица даёт `kinds_seen_by_path` 22 вместо 7, `kinds_seen_by_name_only` 0 вместо 12,
+`kinds_seen_by_no_tool` 0 вместо 3. **Метрика блока достигнута**: `tool_blind_kinds` 12 → 0 и
+`kinds_seen_by_no_tool` 7 → 0 — прогон `gate-16.json` (итерация 13, один цикл платформы `load`
+8.0 с / `check` 2.0 с / `dump` 2.0 с, код возврата 0, тот же `cfg`) даёт `tool_counts_source`
+22 класса с `files 30` (манифест открытых файлов) и пустой `tool_blind_kinds`; `diff_reader_vs_gate`
+пуст в обоих модельных прогонов. A6 открыта и отложена: модулей уровня конфигурации в `cfg` нет,
+поэтому закрыть её на этом корпусе нельзя; отдельно не закрыты дескрипторы `Commands/<Имя>.xml`
+(их читатель не открывает), одиночные дескрипторы `Forms/<Имя>.xml` и `Templates/<Имя>.xml` без
+каталога (в манифест не попадают) и нечитаемый `Roles/<Имя>/Ext/Rights.xml` (даёт непройденное
+исключение разбора XML вместо записи диагноза).
 
 ## Блок B. Разломанные места: команды, которые падают или врут
 
