@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import counts                                                    # noqa: E402
 import gate                                                      # noqa: E402
 import ib_loop                                                   # noqa: E402
+import layout                                                    # noqa: E402
 import paths                                                     # noqa: E402
 
 
@@ -81,50 +82,124 @@ class CountsTest(unittest.TestCase):
         self.assertEqual(diff["only_source"], {})
         self.assertEqual(diff["only_dump"], {"Constant": 1})
 
-    def test_object_counts_from_a_model(self):
-        model = {"collections": {"Catalogs": {"kind": "catalog", "objects": [1, 2]},
-                                "Enums": {"kind": "enum", "objects": [1]}}}
-        self.assertEqual(counts.counts_from_model(model), {"catalog": 2, "enum": 1})
+    # Манифест `read_files` — пары `path`/`kind`, которые создал парсер, открывший файл.
+    # Счётчик строится по ним: класс, которого читатель не открыл, нельзя объявить числом.
+    CORPUS = ROOT / "cfg" / "ЭффективностьОтдела"
 
-    def test_counts_include_what_the_reader_keeps_outside_collections(self):
-        """Общие модули, общие реквизиты, формы и пропущенные файлы читатель держит в других
-        ключах модели. Без них сравнение с независимым счётчиком по файлам врёт: молчание
-        читателя выглядело бы как «объектов нет»."""
-        model = {
+    def _corpus_model(self):
+        """Модель читателя по боевому корпусу — тот же вызов, который делает гейт."""
+        local = ROOT / "local.paths.json"
+        src = paths.load_local(local).get("p1c") if local.is_file() else None
+        if not self.CORPUS.is_dir() or not src:
+            self.skipTest("нет боевого корпуса или пути читателя: манифест не измерить")
+        sys.path.insert(0, src)
+        from p1c.load import reader                                              # noqa: E402
+        return reader.load_configuration_model(str(self.CORPUS), parallel=False)
+
+    def test_counts_come_from_manifest_pairs(self):
+        """Вид метаданных и его число берутся из пар `path`/`kind` манифеста, а имена видов
+        совпадают с независимым счётчиком по раскладке (`scripts/layout.py`): иначе сравнение
+        двух счётчиков нельзя прочитать без догадок."""
+        manifest = [{"path": "Catalogs/Сотрудники.xml", "kind": "catalog"},
+                    {"path": "Enums/ГрейдыСпециалистов.xml", "kind": "enum"},
+                    {"path": "Catalogs/Сотрудники/Ext/ObjectModule.bsl", "kind": "object_module"},
+                    {"path": "Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form/Module.bsl",
+                     "kind": "form_module"}]
+        self.assertEqual(counts.counts_from_model({"read_files": manifest}),
+                         {"bsl_module": 2, "catalog": 1, "enum": 1, "files": 4,
+                          "form_module": 1, "object_module": 1})
+
+    def test_model_keys_without_manifest_pairs_count_as_nothing(self):
+        """Ключ модели — намерение читателя, манифестная пара — факт открытия. Счётчик,
+        построенный по ключам, называет классы, которых читатель не открывал: молчание
+        читателя стало бы неотличимым от пустой конфигурации — ровно в опасную сторону.
+
+        Отсюда и прежний запрет: `role` (дескриптор `Roles/Имя.xml`) появляется только тогда,
+        когда парсер открыл этот дескриптор, и не появляется, если открыт только файл прав.
+        """
+        intentions = {
             "collections": {"Справочники": {"kind": "catalog", "objects": ["А", "Б"]}},
-            "objects": {"catalog.А": {"forms": [{"name": "ФормаА"}]},
-                        "catalog.Б": {"forms": []}},
+            "objects": {"catalog.А": {"forms": [{"name": "ФормаА"}],
+                                      "commands": [{"name": "КомандаА"}]}},
             "common_modules": {"М1": {}, "М2": {}},
             "common_attributes": {"Р1": {}},
             "common_forms": [{"name": "Ф1"}],
-            "skipped_files": [{"path": "Модуль.bsl", "error": "не разобран"}],
-        }
-        got = counts.counts_from_model(model)
-        self.assertEqual(got["catalog"], 2)
-        self.assertEqual(got["common_module"], 2)
-        self.assertEqual(got["common_attribute"], 1)
-        self.assertEqual(got["form_data"], 2)
-        self.assertEqual(got["skipped_module_files"], 1)
-
-    def test_counts_include_role_rights_and_predefined_data(self):
-        """Права ролей и предопределённые данные читатель держит отдельными ключами модели, а
-        независимый счётчик по файлам (`scripts/layout.py`) считает их классами `role_rights` и
-        `predefined_data`. Без этих пар прочитанные файлы остались бы в `tool_blind_kinds`:
-        счётчик читателя не показал бы, что роль и строки каталога он видел.
-
-        Имя `role` (дескриптор `Roles/Имя.xml`) читатель не выдаёт: он читает `Ext/Rights.xml`,
-        а не дескриптор роли, и объявлять дескриптор прочитанным нельзя.
-        """
-        model = {
-            "collections": {"Справочники": {"kind": "catalog", "objects": ["А"]}},
-            "roles": {"ПолныеПрава": {"path": "Roles/ПолныеПрава/Ext/Rights.xml"},
-                      "ТолькоЧтение": {"path": "Roles/ТолькоЧтение/Ext/Rights.xml"}},
+            "roles": {"СотрудникОтдела": {"path": "Roles/СотрудникОтдела/Ext/Rights.xml"}},
             "predefined_data": {"catalog.А": {"path": "Catalogs/А/Ext/Predefined.xml"}},
         }
-        got = counts.counts_from_model(model)
-        self.assertEqual(got["role_rights"], 2)
-        self.assertEqual(got["predefined_data"], 1)
+        self.assertEqual(counts.counts_from_model(intentions), {})
+
+        rights_only = [{"path": "Roles/СотрудникОтдела/Ext/Rights.xml", "kind": "role_rights"}]
+        got = counts.counts_from_model({"read_files": rights_only})
+        self.assertEqual(got, {"files": 1, "role_rights": 1})
         self.assertNotIn("role", got)
+
+        opened = [{"path": "Roles/СотрудникОтдела.xml", "kind": "role"},
+                  {"path": "Roles/СотрудникОтдела/Ext/Rights.xml", "kind": "role_rights"},
+                  {"path": "Catalogs/Сотрудники/Ext/Predefined.xml", "kind": "predefined_data"}]
+        got = counts.counts_from_model({"read_files": opened})
+        self.assertEqual(got["role"], 1)
+        self.assertEqual(got["role_rights"], 1)
+        self.assertEqual(got["predefined_data"], 1)
+
+    def test_skipped_module_files_stay_record_derived(self):
+        """Нечитаемые модули читатель записывает записями диагноза, а не манифестной парой:
+        класс `skipped_module_files` обязан считаться из них и без манифеста."""
+        model = {"read_files": [], "skipped_files": [{"path": "Модуль.bsl", "error": "нет файла"}]}
+        self.assertEqual(counts.counts_from_model(model), {"skipped_module_files": 1})
+
+    def test_corpus_manifest_counts_the_measured_classes(self):
+        """Замер боевого корпуса `cfg/ЭффективностьОтдела` (31 файл, прочитано 30): читатель
+        называет дескрипторы языка, подсистем и ролей, содержимое форм и макетов и модули —
+        то, чего прежний счётчик по ключам модели не показывал вообще."""
+        got = counts.counts_from_model(self._corpus_model())
+        self.assertEqual(got, {
+            "accumulation_register": 1,
+            "bsl_module": 8,
+            "catalog": 1,
+            "common_module": 1,
+            "constant": 1,
+            "data_processor": 1,
+            "document": 1,
+            "enum": 1,
+            "files": 30,
+            "form_data": 2,
+            "form_descriptor": 2,
+            "form_module": 2,
+            "information_register": 1,
+            "language": 1,
+            "object_module": 6,
+            "predefined_data": 1,
+            "report": 1,
+            "report_template": 1,
+            "report_template_data": 1,
+            "role": 2,
+            "role_rights": 2,
+            "subsystem": 1,
+        })
+
+    def test_corpus_manifest_names_match_the_layout_counter(self):
+        """Имена классов манифеста читателя и счётчика по раскладке обязаны совпасть: иначе
+        в матрице покрытия остаются слепые пятна, которые нельзя отличить от пустой папки.
+
+        Единственное различие по числам — `files`: раскладка считает 31 файл корпуса,
+        манифест называет 30 прочитанных. Незакрытым остаётся ровно `Configuration.xml`:
+        он корень раскладки, и ни один парсер записей из него не создаёт.
+        """
+        model = self._corpus_model()
+        got = counts.counts_from_model(model)
+        want = layout.layout_counts(self.CORPUS)
+        self.assertEqual(sorted(got), sorted(want))
+        differences = {kind: [want.get(kind, 0), got.get(kind, 0)]
+                       for kind in sorted(set(want) | set(got))
+                       if want.get(kind, 0) != got.get(kind, 0)}
+        self.assertEqual(differences, {"files": [31, 30]})
+
+        read = {entry["path"] for entry in model["read_files"]}
+        on_disk = {path.relative_to(self.CORPUS).as_posix()
+                   for path in self.CORPUS.rglob("*") if path.is_file()}
+        self.assertEqual(on_disk - read, {"Configuration.xml"})
+        self.assertEqual(read - on_disk, set())
 
     def test_object_counts_refuses_without_reader_path(self):
         """Молчаливый «читателя не нашли» неотличим от конфигурации без объектов."""

@@ -14,42 +14,26 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def counts_from_model(model: dict) -> dict:
-    """Вид метаданных -> число объектов в модели `p1c.load`.
+    """Вид метаданных -> число файлов, которые читатель `p1c.load` открыл.
 
+    Считаются пары `path`/`kind` манифеста `read_files`: класс присваивает парсер, открывший
+    файл. Ключи модели — намерение читателя, и счётчик по ним называет классы, которых
+    читатель не открывал: молчание читателя стало бы неотличимым от пустой конфигурации.
     Вид должен называться так же, как в независимом счётчике по раскладке файлов
     (`scripts/layout.py`), иначе сравнение двух счётчиков нельзя прочитать без догадок.
-    Общая часть модели (`collections`) даёт только 18 распознаваемых папок выгрузки; общее,
-    формы, пропущенные файлы, права ролей и предопределённые данные лежат в других ключах,
-    и без них молчание читателя неотличимо от пустой конфигурации.
+    Нечитаемые модули — записи диагноза (`skipped_files`), манифестной пары у них нет.
     """
     model = model or {}
+    manifest = model.get("read_files") or []
     result: dict[str, int] = {}
-    for collection in model.get("collections", {}).values():
-        kind = collection.get("kind", "")
-        result[kind] = result.get(kind, 0) + len(collection.get("objects", []))
-    for key, kind in (("common_modules", "common_module"), ("common_attributes", "common_attribute"),
-                      ("common_forms", "common_form")):
-        value = model.get(key)
-        count = len(value) if isinstance(value, dict) else len(value or [])
-        if count:
-            result[kind] = result.get(kind, 0) + count
-
-    # Права ролей и предопределённые данные: имена совпадают со счётчиком по файлам
-    # (`scripts/layout.py`), потому что без них прочитанные `Ext/Rights.xml` и
-    # `Ext/Predefined.xml` остались бы в `tool_blind_kinds`. Имя `role` (дескриптор
-    # `Roles/Имя.xml`) не выдаётся: читатель читает файл прав, а не дескриптор роли.
-    if model.get("roles"):
-        result["role_rights"] = result.get("role_rights", 0) + len(model["roles"])
-    if model.get("predefined_data"):
-        result["predefined_data"] = result.get("predefined_data", 0) + len(model["predefined_data"])
-
-    forms = sum(len(obj.get("forms", [])) for obj in model.get("objects", {}).values())
-    forms += len(model.get("common_forms") or [])
-    if forms:
-        result["form_data"] = forms
-    commands = sum(len(obj.get("commands", [])) for obj in model.get("objects", {}).values())
-    if commands:
-        result["command_module"] = commands
+    for entry in manifest:
+        kind = entry.get("kind", "")
+        if kind:
+            result[kind] = result.get(kind, 0) + 1
+        if str(entry.get("path", "")).endswith(".bsl"):
+            result["bsl_module"] = result.get("bsl_module", 0) + 1
+    if manifest:
+        result["files"] = len(manifest)
     if model.get("skipped_files"):
         result["skipped_module_files"] = len(model["skipped_files"])
     return {kind: count for kind, count in sorted(result.items()) if count}
