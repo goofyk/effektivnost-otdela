@@ -1,0 +1,159 @@
+# План итерации 13: читатель `p1c` добирает языки, подсистемы, дескрипторы и содержимое макетов; счётчик classes становится манифестным
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (нативное выполнение в этой сессии) вместе с superpowers:test-driven-development — задачи связаны одной формой учёта (манифест прочитанных файлов) и одним корпусом-фикстурой, поэтому их пишет и выполняет один исполнитель; измерительные задачи (Task 27) идут тем же исполнителем, потому что 1С-прогоны нельзя параллелить. Steps use checkbox (`- [ ]`) syntax for tracking. Нумерация продолжается с `Task 21` прежнего плана `docs/superpowers/plans/2026-10-26-effektivnost-otdela.md`.
+
+**Goal:** научить читатель `p1c` реально открывать `Languages/<Имя>.xml`, `Subsystems/<Имя>.xml`, дескрипторы `Roles/<Имя>.xml` и `Forms/<Имя>.xml`, дескрипторы макетов `Templates/<Имя>.xml` и содержимое схемы компоновки данных `Templates/<Имя>/Ext/Template.xml`, называть класс каждого реально прочитанного файла; перестроить `scripts/counts.py` на этот манифест; сделать один 1С-прогон `gate-16` и переснять матрицу покрытия.
+
+**Architecture:** правки идут в двух репозиториях: читатель и его тесты — в `p1c` (`src/p1c/load/reader.py`, `src/p1c/load/cli.py`, `tests/load/`), манифестный счётчик и его тест — в контуре `effektivnost-otdela` (`scripts/counts.py`, `tests/test_contour.py`); матрица и документы контура переснимаются против нового артефакта `reports/gate-16.json`. Корпус конфигурации не меняется, меняется только то, что о нём известно инструментам.
+
+**Tech Stack:** Python 3.15; тесты `p1c` — скрипты с `check()`/`fails` под runner `python scripts/run_tests.py` (в `p1c` `unittest discover` не применяется); тесты контура — stdlib `unittest` (`python -m unittest discover -s tests`); 1C:Enterprise 8.3.27.1606 в режимах `DESIGNER /LoadConfigFromFiles`, `/CheckModules`, `/DumpConfigToFiles` через `scripts/ib_loop.py`; форматы файлов конфигурации (MetaDataObject XML, `DataCompositionSchema` XML, BSL).
+
+**Spec:** блок A таблицы `docs/план-оптимизации-p1c.md` (строки A3–A5 и метрика «число классов метаданных, пути файлов которых называет сам инструмент»), раздел «Статус блока A к итерации 12»; решение исполнителя итерации 13 в `.superpowers/sdd/effektivnost-otdela/progress.md`.
+
+## Global Constraints
+
+- Ответы и тексты документов — по-русски; имена флагов и режимов платформы — только из замера `p1c/src/p1c/data/test_cli_flags.json`, выдуманные значения помечать явно как неподтверждённые.
+- 1С-прогоны строго по одному, не параллельно; тяжёлые обходы корпусов — вне окон 1С-замеров.
+- Гейт-ИБ (`<tmp>\p1c_effektivnost\ib`) модифицирующими вариантами не трогать; модифицирующие варианты только на `<tmp>\p1c_effektivnost\probe_ib` с `--allow-mutating`. В этой итерации модифицирующих вариантов нет вовсе.
+- `PREDICTIONS` записываются до прогона и после прогона не переписываются; непредсказанные шаги идут отдельным списком с причиной.
+- Абсолютных путей в `scripts`, `probe`, `tests` и документах нет: только свёртки `<work>`, `<tmp>`, `<repo>`, `<dump>`, `<cfg>`, `<p1c>` и относительные пути репозитория.
+- Строки `scripts/exec_probe.py` — не длиннее 115 символов; `progress.md` коммитится отдельно от кода и документов.
+- Перед коммитом тексты проверять сканами на склейки латиницы с кириллицей, CJK, англицызмы и ABS-PATH.
+- Значения в модели и в тестах — только из замеренных файлов корпуса; ничего «правдоподобного» по памяти платформенных форматов.
+- Эталон `docs/expected-metadata.json` (`iteration: 5`, 22 класса, `files 31`, `bsl_module 8`, `object_module 6`) в этой итерации не меняется.
+- `docs/canonical-rights.json` и контроль неподвижности прав (`scripts/rights.py`) не трогаются.
+
+## Review Focus
+
+- Манифест обязан создаваться в точке фактического открытия файла, а не «по раскладке папок»: иначе он повторяет `layout.py` и перестаёт быть доказательством, что инструмент читал файл.
+- Класс `files` манифеста (30) против `files 31` у layout — различие ровно в одном файле `Configuration.xml`, который читатель не открывает; это записывается как факт и как граница паритета, а не как ошибка и не закрывается чтением корневого дескриптора.
+- Манифестные пути обязаны нормализоваться тем же `base`, что и остальные пути модели (у EDT снимается `src/`), иначе четыре теста паритета `m1 == m2` расходятся на двух фикстурах `p1c/examples`.
+- Класс `bsl_module 8` в манифестной сверке намеренно пересекается с `object_module 6` и `form_module 2`: это разные наблюдения об одном множестве файлов, и пересечение надо объяснить в тесте, а не «починить» вычитанием.
+- Открытие `Forms/<Имя>/Ext/Form/Module.bsl` — решение с последствиями: либо модуль формы идёт в `module_jobs` (и у записи формы появляются `exports`, и меняется `skipped_module_files`), либо `form_module` называется только по открытым файлам манифеста. Оба варианта оставляют `test_scan.py:62-71` (форма `skipped_files` и сообщение `[context] модулей не прочитано: 1`) зелёным — проверять на факте.
+- Матрица мерит хиты по тексту JSON-отчёта, поэтому пути манифеста должны попасть в вывод `load model` (`MODEL_KEYS` и payload `{"model": model}`); без этого пересъёмка даст те же 7 классов по пути.
+- `role` как класс обязан появиться именно путём файла `Roles/<Имя>.xml`, а не именем роли в отчёте: `PATH_ONLY_KINDS` в `probe/tool_coverage.py` при этом не расширяется, и это надо проверить, а не предполагать.
+
+---
+
+### Task 21: фикстурный корпус `p1c/examples/managed_app` (копия замеренного `cfg`)
+
+**Files:**
+- Create: `examples/managed_app/` в репозитории `p1c` — копия `cfg/ЭффективностьОтдела` (31 файл, включая `Languages/Русский.xml`, `Subsystems/ЭффективностьОтдела.xml`, `Roles/СотрудникОтдела.xml`, `Roles/СотрудникОтдела/Ext/Rights.xml`, `Catalogs/Сотрудники/Forms/ФормаЭлемента.xml` и `…/Ext/Form.xml` и `…/Ext/Form/Module.bsl`, `Reports/ОтчётЗагрузки/Templates/ОсновнаяСхемаКомпоновкиДанных.xml` и `…/Ext/Template.xml`, `Catalogs/Сотрудники/Ext/Predefined.xml`, `Configuration.xml`)
+- Create: `p1c/tests/load/test_fixture_corpus.py`
+
+**Interfaces:**
+- Produces: `examples/managed_app` — корпус layout-раскладки конфигуратора (не EDT), на котором дальше проверяются все новые классы; относительные posix-пути файлов совпадают с путями `layout_counts("cfg/ЭффективностьОтдела")` в контуре.
+- Consumes: замеренный список 31 файла корпуса контура.
+
+- [x] **Step 1: Write the failing test** `tests/load/test_fixture_corpus.py` (форма `check()`/`fails` по образцу `tests/load/test_rights_predefined.py`): корпус существует, содержит ровно 31 файл, и sha256 каждого файла совпадает с sha256 парного файла корпуса контура; ожидается `FAILED` (каталога нет).
+- [x] **Step 2: Run to verify it fails** — `python tests/load/test_fixture_corpus.py`, ожидается отказ «каталог корпуса отсутствует».
+- [x] **Step 3: Implement** — скопировать `cfg/ЭффективностьОтдела` в `examples/managed_app` без изменений содержимого (никакой перекодировки, BOM и CRLF сохраняются как есть).
+- [x] **Step 4: Run to verify it passes** — `python tests/load/test_fixture_corpus.py`, ожидается 31 совпадение sha256 и код 0.
+- [x] **Step 5: Сверка с layout-числами** — в контуре `python -c`-скриптом (файлом во временном каталоге, не однострочником с кавычками) вызвать `scripts/layout.py::layout_counts` на `examples/managed_app` и убедиться, что получается те же 22 класса и те же числа, что для `cfg/ЭффективностьОтдела` (в том числе `files 31`, `bsl_module 8`, `object_module 6`, `form_descriptor 2`, `role 2`).
+- [x] **Step 6: Commit** в `p1c` — отдельным коммитом фикстуры и её теста.
+
+### Task 22: манифест прочитанных файлов как форма учёта А5
+
+**Files:**
+- Modify: `p1c/src/p1c/load/reader.py` (собрать модель и точки открытия: цикл коллекций `720-798`, `Roles` `803-809`, `CommonModules` `811-821`, `CommonAttributes` `825-831`, `CommonForms` `834-839`, фазы 2–3 `846-923`)
+- Create: `p1c/tests/load/test_read_manifest.py`
+
+**Interfaces:**
+- Produces: `load_configuration_model(root, …)` возвращает ключ `read_files` — список записей `{"path": <posix относительно base>, "kind": <таксон>}`; путь нормализуется тем же `base`, что и `path` у записей прав, предопределённых данных и форм (`701-703`, `714`); класс присваивает парсер, открывший файл. Классы на этом этапе: девять дескрипторов коллекций, `object_module`, `role_rights`, `predefined_data`.
+- Consumes: фикстура `examples/managed_app` (Task 21) и прежние фикстуры `examples/designer_dump`, `examples/edt_project`.
+
+- [x] **Step 1: Write the failing test** `tests/load/test_read_manifest.py`: для `examples/designer_dump` манифест непустой и содержит пару `("Roles/ПолныеПрава/Ext/Rights.xml", "role_rights")`, `("Catalogs/Номенклатура/Ext/ManagerModule.bsl", "object_module")`; для `examples/edt_project` тот же файл записан без `src/`; ожидается отказ (ключа `read_files` нет).
+- [x] **Step 2: Run to verify the reason of the failure** — `python tests/load/test_read_manifest.py`, убедиться, что причина — отсутствие ключа, а не ошибка парсинга (отказали ровно 27 проверок манифеста, `skipped_files` при этом на месте).
+- [x] **Step 3: Implement минимально** — одна точка `_opened(rel_path, kind)` в читателе, вызываемая там, где файл реально открывается (дескриптор коллекции перед `parse_object_xml`, файл модуля перед `_read_module`, `Ext/Rights.xml` перед `parse_rights_xml`, `Ext/Predefined.xml` перед `parse_predefined_xml`); никакого обхода папок «для количества». Отступление от формулировки: файл модуля в `Ext/` называется после того как скан подтвердил чтение (`scan_one` возвращает `read`), потому что отсутствующий и нечитаемый модуль дают одинаковый пустой список экспортов и иначе манифест был бы нечестным.
+- [x] **Step 4: Run tests to verify they pass** — `python tests/load/test_read_manifest.py`, затем `python scripts/run_tests.py`; особое внимание к четырём тестам полного паритета модели (`tests/load/test_reader.py:82`, `tests/load/test_sources.py:44`, `tests/load/test_rights_predefined.py:149`, `tests/metadata/test_loader.py:85`): манифест в них попадает как общий ключ, поэтому пути обязаны совпасть на обеих фикстурах. Правки этих четырёх тестов не понадобились.
+- [x] **Step 5: Commit** — код читателя и его тест одним коммитом в `p1c`.
+
+### Task 23: языки, подсистемы и дескрипторы ролей
+
+**Files:**
+- Modify: `p1c/src/p1c/load/reader.py` (`COLLECTIONS_MAP` `76-137`, блок `Roles` `803-809`, ключи модели `709-711`)
+- Modify: `p1c/src/p1c/load/cli.py` (`MODEL_KEYS` `69-70`, `_measure` `73-75`)
+- Create: `p1c/tests/load/test_languages_subsystems_roles.py`
+
+**Interfaces:**
+- Produces: ключи модели `languages`, `subsystems`, `role_descriptors`; записи дословные из замеренных файлов: язык — `name`, `synonym` (текст `v8:item`/`v8:lang ru`/`v8:content`), `language_code`, `path`; подсистема — `name`, `synonym`, `content` (9 строк `Catalog.Сотрудники` … `CommonModule.РасчётПоказателей`), `path`; дескриптор роли — `name`, `synonym`, `comment`, `path`. Манифестные пары: `("Languages/Русский.xml", "language")`, `("Subsystems/ЭффективностьОтдела.xml", "subsystem")`, `("Roles/СотрудникОтдела.xml", "role")`.
+- Consumes: Task 22 (`_opened`), фикстура `examples/managed_app`.
+
+- [ ] **Step 1: Write the failing test** на три класса: ожидается `languages == [{"name": "Русский", "synonym": "Русский", "language_code": "ru", "path": "Languages/Русский.xml"}]` (значения — из замеренного файла), подсистема с 9 строками `content` в порядке файла, и ровно две записи `role_descriptors` с путями `Roles/СотрудникОтдела.xml` и `Roles/АдминистраторСистемы.xml` (в фикстуре `examples/managed_app` и в `cfg` именно эти имена; прежде в шаге было указано `Roles/ПолныеПрава.xml` — имя из другой фикстуры `examples/designer_dump`, в боевом корпусе такой роли нет); плюс проверки манифестных пар. Отказ — ключей нет.
+- [ ] **Step 2: Run to verify the reason** — `python tests/load/test_languages_subsystems_roles.py`.
+- [ ] **Step 3: Implement** — три парсера (`parse_language_xml`, `parse_subsystem_xml`, `parse_role_descriptor_xml`) в том же стиле, что `parse_rights_xml` (`594-607`): `ET.parse` → `_local`/`_find`/`_text`; `_local` снимает пространство имён, поэтому `Synonym` читается тем же `_text`, что и остальные свойства; вложенность `v8:item` разворачивается одной вспомогательной функцией, которая возвращает текст `v8:content`. Открытие дескриптора роли — до чтения `Ext/Rights.xml`, класс `role`.
+- [ ] **Step 4: Run tests to verify they pass** — новый тест, затем `python scripts/run_tests.py` целиком; при отказе четырёх паритетных тестов — читать их формулировки до правки, а не править тест «под код».
+- [ ] **Step 5: Commit** в `p1c`.
+
+### Task 24: дескрипторы форм, дескрипторы макетов и содержимое схемы компоновки данных
+
+**Files:**
+- Modify: `p1c/src/p1c/load/reader.py` (цикл коллекций `720-798` — обход `Forms` и `Templates` внутри папки объекта; блок `CommonForms` `834-839`; `parse_form_xml` `519-564`)
+- Create: `p1c/tests/load/test_forms_templates.py`
+
+**Interfaces:**
+- Produces: ключи `form_descriptors` (`name`, `synonym`, `form_type`, `use_purposes` (`PlatformApplication`, `MobilePlatformApplication`), `path`), `templates` (`name`, `synonym`, `template_type` — дословно `DataCompositionSchema`, `path`) и `template_data` (разбор `Ext/Template.xml` с корнем `DataCompositionSchema` без обёртки `MetaDataObject`: имена источников данных, наборы данных с `xsi:type`, имена полей и `dataPath`, текст `<query>`); манифестные пары `form_descriptor`, `form_data`, `report_template`, `report_template_data`, `form_module`.
+- Consumes: Task 22; замеренный текст `Ext/Template.xml` (152 строки).
+
+- [ ] **Step 1: Write the failing test**: дескрипторов форм ровно 2 с `form_type == "Managed"`; содержимое формы 2 (уже читаемые `Ext/Form.xml`); модулей формы 2 (пути `…/Ext/Form/Module.bsl`); дескриптор макета ровно 1 с `template_type == "DataCompositionSchema"`; содержимое макета — источник `ИсточникДанных1`, набор `НаборДанных1`, поля `Сотрудник` и … (по замеренному файлу), непустой текст запроса. Отказ — ключей `form_descriptors`/`templates`/`template_data` и пар `form_descriptor`/`report_template`/`report_template_data` нет.
+- [ ] **Step 2: Run to verify the reason.**
+- [ ] **Step 3: Implement** — `parse_template_descriptor_xml`, `parse_template_data_xml`; обход `Forms` и `Templates` внутри папки объекта там же, где сейчас собираются формы (дескриптор читается как отдельный файл и получает свою манифестную пару, содержимое `Ext/…` — свою). Решение по модулям форм фиксируется в журнале: либо `Forms/<Имя>/Ext/Form/Module.bsl` добавляется в `module_jobs` (тогда у записей форм появляется `exports`, и это проверяется тестом), либо `form_module` называется только по факту открытия файла; выбирается то, что оставляет зелёным `tests/load/test_scan.py:62-71`.
+- [ ] **Step 4: Run tests to verify they pass** — новый тест, `python scripts/run_tests.py`, `python tests/core/test_wording.py`, `python tests/core/test_layers.py`.
+- [ ] **Step 5: Commit** в `p1c`.
+
+### Task 25: манифест и новые ключи попадают в отчёт `load model`
+
+**Files:**
+- Modify: `p1c/src/p1c/load/cli.py` (`MODEL_KEYS` `69-70`, `_measure` `73-75`, `cmd_model` `86-89`, `COMMANDS` `141-142`)
+- Create: `p1c/tests/load/test_model_report_paths.py`
+
+**Interfaces:**
+- Produces: вывод `load model` содержит записи манифеста (posix-пути с экранированием `\/` читаются как дословные пути) и новые ключи-записи `languages`, `subsystems`, `role_descriptors`, `form_descriptors`, `templates`, `template_data`. Манифест в `MODEL_KEYS` не входит по той же причине, что `skipped_files`: это провенанс и диагноз, а не содержимое источника (решение зафиксировать в журнале).
+- Consumes: Tasks 22–24.
+
+- [ ] **Step 1: Write the failing test**: запуск `cli.main(["model", <корпус>])` с выводом в буфер и проверка, что в тексте отчёта встречаются строки `Languages/Русский.xml`, `Subsystems/ЭффективностьОтдела.xml`, `Roles/СотрудникОтдела.xml`, `Reports/ОтчётЗагрузки/Templates/ОсновнаяСхемаКомпоновкиДанных/Ext/Template.xml` и `Catalogs/Сотрудники/Forms/ФормаЭлемента/Ext/Form.xml` (форма проверки — как `tests/load/test_rights_predefined.py:187-192`); плюс проверка кодов возврата: корпус с записями → 0, пустой каталог → 1 (`MODEL_KEYS` влияет на код).
+- [ ] **Step 2: Run to verify the reason.**
+- [ ] **Step 3: Implement** — пополнить `MODEL_KEYS` только ключами-записями; payload `cmd_model` не перестраивать.
+- [ ] **Step 4: Run tests to verify they pass** — новый тест + `python scripts/run_tests.py` + `python scripts/run_tests.py --smoke`.
+- [ ] **Step 5: Commit** в `p1c`.
+
+### Task 26: манифестный `counts_from_model` и паритет имён классов в контуре
+
+**Files:**
+- Modify: `scripts/counts.py` (`counts_from_model` `16-55`; `object_counts` `72-94` и её тексты `:79`, `:92-93` не менять)
+- Modify: `tests/test_contour.py` (`CountsTest` `77-160`, в том числе `:84-88`, `:89-107`, докстринг `:115-116` и `assertNotIn("role", got)` `:127`)
+- Create: запись паритета в `tests/test_contour.py`
+
+**Interfaces:**
+- Produces: `counts_from_model(model)` возвращает классы из пар `path`/`kind` манифеста; `files` = длина манифеста; `bsl_module` = число манифестных записей с путём на `.bsl`; `skipped_module_files` остаётся record-производным; record-производные `form_data` и `command_module` исчезают.
+- Consumes: модель читателя `p1c` (Task 22–24) и `scripts/layout.py::layout_counts` как независимый источник.
+
+- [ ] **Step 1: Write the failing test** (RED): по манифесту корпуса ожидается ровно `{language: 1, subsystem: 1, role: 2, role_rights: 2, predefined_data: 1, form_descriptor: 2, form_data: 2, form_module: 2, report_template: 1, report_template_data: 1, object_module: 6, bsl_module: 8, files: 30}` плюс девять дескрипторов коллекций; отдельная проверка — множество имён классов манифеста равно множеству имён `layout_counts` (22 имени), единственное различие по числам — `files` (30 против 31), и недостающий файл ровно `Configuration.xml`, а в остальных классах незакрытых файлов нет. Отказ — текущий `counts_from_model` не возвращает `language`, `subsystem`, `role`, `report_template`.
+- [ ] **Step 2: Run to verify the reason** — `python -m unittest tests.test_contour.CountsTest -v`; убедиться, что падают именно assertions о классах, а не импорт.
+- [ ] **Step 3: Implement минимально** — перестроить `counts_from_model` на манифест; смысл прежних тестов сохранить: каждый переписанный тест обязан проверять то же утверждение в новой форме (в частности, прежний запрет «объявлять дескриптор прочитанным нельзя» становится проверкой, что дескриптор появляется только как запись манифеста, созданная парсером, а не как имя модели).
+- [ ] **Step 4: Run tests to verify they pass** — `python -m unittest discover -s tests` (полный прогон контура).
+- [ ] **Step 5: Сверка без платформы** — `python probe/tool_coverage.py --offline` (если такой режим есть в текущем коде — проверить по `main` `434-533`; если нет, использовать прямой вызов `reader_kind_counts` и `layout_files` скриптом во временном каталоге) и убедиться, что `tool_blind_kinds` по именам классов становится пустым, а `kinds_seen_by_path` — 22. Тяжёлые обходы корпусов — вне окна 1С-замеров.
+- [ ] **Step 6: Commit** — код и тесты контура одним коммитом (ASCII-транслитерацией сообщения).
+
+### Task 27: один 1С-прогон `gate-16`, пересъёмка матрицы и документов
+
+**Files:**
+- Create: `reports/gate-16.json` (артефакт прогона)
+- Modify: `probe/tool_coverage.py` (только `GATE_ARTIFACT` `:58` → `reports/gate-16.json`)
+- Modify: `docs/evidence/tool-coverage.md` (пересъёмка матрицы), `docs/слепые-пятна.md`, `docs/итог-боевой-проверки.md`, `docs/план-оптимизации-p1c.md` («Статус блока A к итерации 13», строки A3–A5)
+- Modify: `.superpowers/sdd/effektivnost-otdela/progress.md` (журнал итерации 13 — отдельный коммит)
+
+**Interfaces:**
+- Produces: `gate-16.json` с `layout_source` = 22 класса и `tool_counts_source`, построенным манифестным читателем; `tool_blind_kinds = sorted(set(layout_source) - set(tool_counts_source))` (ожидание — пустой список).
+- Consumes: `scripts/gate.py` (флаги `--cfg --out --expected --bin --ib --dump --p1c --local --canon --timeout --no-platform`), `scripts/ib_loop.py` (шаги `create`, `load`, `check`, `dump`), `probe/tool_coverage.py`, `probe/render_query_tables.py`.
+
+- [ ] **Step 1: Записать `PREDICTIONS` до прогона** в журнал: ожидаемые код 0, `layout_source` 22 класса с числами `files 31`, `bsl_module 8`, `object_module 6`, `form_descriptor 2`, `form_data 2`, `form_module 2`, `role 2`, `role_rights 2`, `predefined_data 1`, `language 1`, `subsystem 1`, `report_template 1`, `report_template_data 1` и по 1 у девяти дескрипторов коллекций; `tool_blind_kinds == []`; `rights` 17 блоков / 79 прав; длительности шагов `load` ≈ 6 с, `check` ≈ 2 с, `dump` ≈ 2 с.
+- [ ] **Step 2: Проверить состояние гейт-ИБ без модификаций** — только чтение; каталог выгрузки `<tmp>\p1c_effektivnost\dump` отсутствует, его создаёт шаг `dump`.
+- [ ] **Step 3: Единственный прогон** — `python scripts/gate.py --cfg "cfg/ЭффективностьОтдела" --out reports/gate-16.json --canon docs/canonical-rights.json --timeout 240` (`bin`, `ib`, `dump`, `p1c` — из `local.paths.json`); без `--allow-mutating`, один раз, без повторов «для устойчивости».
+- [ ] **Step 4: Разобрать артефакт скриптом** (артефакт JSON консоли читается скриптом во временном каталоге, а не просмотром файла консоли) и сравнить с `PREDICTIONS`; всё непредсказанное — отдельным списком с причиной, `PREDICTIONS` не переписывать.
+- [ ] **Step 5: Пересъёмка матрицы** — `GATE_ARTIFACT` уже указывает на `gate-16.json`, `python probe/tool_coverage.py`; зафиксировать `kinds` (по пути / только именем / без инструмента) и строку `reader vs gate`.
+- [ ] **Step 6: Проверить ожидание по слепым классам**: `no_tool` обязан стать 0; если стал — записать, чем именно закрыт каждый из прежних трёх (`language`, `report_template`, `report_template_data`) и класса `role` (путём `Roles/<Имя>.xml`).
+- [ ] **Step 7: Таблицы запросов** — `python probe/render_query_tables.py`, затем `python probe/render_query_tables.py --check`.
+- [ ] **Step 8: Поправить документы** (`docs/слепые-пятна.md`, `docs/итог-боевой-проверки.md`, `docs/план-оптимизации-p1c.md`): прежние числа (12, 10, 7, 5/10/7) остаются как запись прежних прогонов `gate-14.json` / `gate-15.json`; новые числа — только из `gate-16.json` и из переснятой матрицы.
+- [ ] **Step 9: Сканы текстов** на склейки латиницы с кириллицей, CJK, англицызмы и ABS-PATH — по всем изменённым файлам обоих репозиториев.
+- [ ] **Step 10: Коммиты** — сначала код и тесты (`p1c` — кириллицей через `git commit -F <файл UTF-8 без BOM>`), затем документы контура, затем `progress.md` отдельно; в конце `git status --porcelain` пуст в обоих репозиториях.
