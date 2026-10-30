@@ -347,7 +347,7 @@ def canon_tables():
     lines = ["| где написание | `<вид>.<имя>.<суффикс>`, как разобрал самомер | строка дословно | "
              "суффикс в 12 токенах `DOT_MODE`? | что это на самом деле |", "|---|---|---|---|---|"]
     for hit in gb["dotted_writings_all"]:
-        what = ("дotted-написание виртуальной таблицы" if hit["known_vt_token"] else
+        what = ("dotted-написание виртуальной таблицы" if hit["known_vt_token"] else
                 "источник данных, третья часть — не суффикс ВТ" if hit["kind_is_data_source"]
                 else "не написание источника данных (шум самомера)")
         lines.append("| `%s` | `%s.%s.%s` | `%s` | %s | %s |" % (
@@ -753,13 +753,33 @@ def coverage_report_lines(report) -> list:
     return lines
 
 
+MANIFEST_KEYS = frozenset({"path", "kind"})
+
+
+def manifest_class_counts(items) -> str:
+    """Manifest entries are `(path, kind)` pairs, not named records: count them by class.
+
+    `model.read_files` (the reader's manifest of opened files) holds no `name` field, so
+    `names_of_items` would print one `?` per entry. The classes and their counts are what the
+    manifest says about the layout.
+    """
+    entries = list(items or [])
+    if not entries or not all(isinstance(entry, dict) and set(entry) == MANIFEST_KEYS
+                             for entry in entries):
+        return ""
+    counts: dict = {}
+    for entry in entries:
+        counts[entry["kind"]] = counts.get(entry["kind"], 0) + 1
+    return ", ".join("%s %d" % (kind, count) for kind, count in sorted(counts.items()))
+
+
 def coverage_model_lines(report) -> list:
     """`p1c.load model`: every section of the model it built, with the names each section holds."""
     lines = []
     for key in sorted(report.get("model") or {}):
         value = report["model"][key]
         names = (", ".join("`%s`" % name for name in sorted(value)) if isinstance(value, dict)
-                 else names_of_items(value))
+                 else manifest_class_counts(value) or names_of_items(value))
         lines.append("  model.%s = %d%s" % (key, len(value), ": " + names if names else ""))
     return lines
 
