@@ -1869,3 +1869,28 @@ PREDICTED (записаны до прогона, после прогона не 
   (такого файла нет) и добавлен «Статус блока A к итерации 14»; `docs/evidence/tool-coverage.md` —
   статус итерации 14. Коммит `7274fd9`. Скан текстов: флаги только на прежних строках (цитаты имён
   корпуса), новые абзацы чистые.
+
+### Журнал итерации 14: Task 34–38 (блок C: канонические неявные члены и арности конструкторов)
+
+- Task 34 (канал владельца модуля): `module_owner(path)` в `metadata/module_paths.py` (карта
+  папка→префикс объектного типа), `check_options_for` кладёт `opts["owner"]` для объектных модулей,
+  `resolve_varref` (`semantic.py:598`) сверяется со свойствами владельца до глобальных имён. RED→GREEN:
+  `tests/check_bsl/test_module_owner.py`. Коммит `5b88173`.
+- Task 35 (`Движения`): тип `Движения` с `dynamic_members` в `builtin_type_model`; в канале владельца
+  для `ДокументОбъект.*` ссылка `движения` возвращает `RType("Движения")`. RED→GREEN:
+  `tests/check_bsl/test_dvizheniya.py`. Коммит `f162742`.
+- Task 36 (`СообщениеПользователю`): запись в `EXTRA_TYPES` — `ctor (0,)`, свойства `Текст`/`Поле`,
+  метод `Сообщить` (метод `УстановитьДанные` приходит из `TYPE_SIGNATURES`). RED→GREEN:
+  `tests/check_bsl/test_soobshchenie.py`. Коммит `585933a`.
+- Task 37 (мёртвый `TYPE_CONSTRUCTORS`): удалён из `data/platform_arities.py` и из генератора
+  `scripts/extract_help_arities.py` (страницы типов без точки пропускаются с комментарием). Замер:
+  `grep TYPE_CONSTRUCTORS` по `p1c` пуст, `hasattr(platform_arities, 'TYPE_CONSTRUCTORS') == False`.
+  Коммит `49e12f4`.
+- Task 38 (замер и evidence): `check.bsl` по `examples/managed_app` — 15 → 2 (было 11 scope + 1 ctor +
+  3 method; осталось 2 неявных реквизита в модуле формы, канал владельца для форм не введён —
+  отдельный зазор, вне плана). `builtin_type_model()`: 1914 типов, с `ctor_arities` 45 (44→45,
+  +`СообщениеПользователю`), `dynamic_members` 6 (5→6, +`Движения`); `types_without_ctor` 1869,
+  `types_without_properties` 1891. PREDICTIONS записаны до прогона в плане 14b (15 → меньше), факт
+  совпал (15 → 2). `docs/evidence/tool-coverage.md` дополнен статусом блока C.
+- Полный прогон `p1c`: `python scripts/run_tests.py` — тестов 86, неудачно 0 (84 → 86: +2 новых
+  check_bsl-теста; TYPE_CONSTRUCTORS-задача тестов не добавляла).
