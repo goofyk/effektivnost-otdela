@@ -1894,3 +1894,18 @@ PREDICTED (записаны до прогона, после прогона не 
   совпал (15 → 2). `docs/evidence/tool-coverage.md` дополнен статусом блока C.
 - Полный прогон `p1c`: `python scripts/run_tests.py` — тестов 86, неудачно 0 (84 → 86: +2 новых
   check_bsl-теста; TYPE_CONSTRUCTORS-задача тестов не добавляла).
+
+### Журнал итерации 14: Task 39–42 (блок B: B4/B5/B6 и закрытие итерации)
+
+- Task 39 (B4): `cli/runner.py:298` — `args.root` больше не затирается позиционным (`args.root or
+  args.rest[0]`); `cmd_run` перехватывает `ValueError` от `detect_layout` и отдаёт `W.error` (код 2)
+  по образцу `load/cli.py`. RED→GREEN: `tests/cli/test_runner_root.py`. Коммит `f90ae8f`.
+- Task 40 (B5): `test/run.py` переведён на argparse (голый/неизвестный флаг — код 2, а не
+  `IndexError`; `SystemExit` от argparse возвращается значением). Кейсы добавлены в
+  `tests/test_run/test_run.py`. Коммит `2f296b5`.
+- Task 41 (B6): `check/sdbl/cli.py` `cmd_fields` различает `--no-model` (свой текст) и отсутствие
+  корня (прежний текст); успех — код 0 (`:313`). Кейс в `tests/check_sdbl/test_cli.py`. Коммит `4f22fa5`.
+- Task 42 (закрытие итерации): роадмап `docs/план-оптимизации-p1c.md` — B4/B5/B6 и C1/C2/C4 отмечены
+  «закрыто (итерация 14)», якоря B6 исправлены на `check/sdbl/cli.py:293`/`:313`, добавлены статусы
+  блоков B и C, метрика G (`находки check.bsl` 15 → 2). Полный прогон `p1c` — тестов 87, неудачно 0
+  (86 → 87: +`test_runner_root.py`).
