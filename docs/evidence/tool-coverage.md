@@ -1106,6 +1106,18 @@ ERP:24974, УХ:20828; все эти строки — продолженные, 
 единственного файла корня раскладки, который читатель не открывает как файл метаданных. Рост очереди
 модулей с 18 до 20 — слоты модулей форм, которые читатель добавляет с правки `dcf0112` (§2).
 
+Статус к итерации 14 (блок A: читатель добрал общие коллекции и ограждающий разбор XML). Остаток блока A,
+названный в итерации 13 незакрытым, закрыт: командные модули читаются как `command_module` (декларации команд
+лежат inline в XML владельца — отдельного файла `Commands/<Имя>.xml` в выгрузке нет, замер по 7 корпусам и
+3 фикстурам), дескрипторы и содержимое `CommonCommands`/`CommandGroups`/`CommonPictures`/`CommonTemplates`/
+`CommonForms` названы классами раскладки, одиночные макеты `Templates/<Имя>.xml` без каталога читаются как
+`report_template`, `SettingsStorages` и `FilterCriteria` — как `settings_storage`/`filter_criteria`, а битый
+XML даёт запись `model.xml_diagnostics {"path","kind","error"}` вместо падения. Замеры офлайн (1С не
+запускалась): пульсар — `common_command 47`, `command_group 7`, `common_picture 403`, `common_template 13`,
+`common_form 65`, `command_module 44`, `settings_storage 1`, `filter_criteria 1`; ssl — 3 одиночных макета;
+фикстура `p1c/examples/reader_gaps` (27 файлов) закрывает все классы, единственный непрочитанный файл —
+`Configuration.xml` (`tests/test_manifest_gaps.py`, измеритель `scripts/manifest_gaps.py`).
+
 ## 12. Честная граница меры
 
 - Матрица мерит то, что инструмент **назвал** в своём отчёте или консоли. Кроме одного случая — счёт

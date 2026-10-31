@@ -63,10 +63,22 @@ Task 27). A5 закрыта: класс прочитанного файла на
 8.0 с / `check` 2.0 с / `dump` 2.0 с, код возврата 0, тот же `cfg`) даёт `tool_counts_source`
 22 класса с `files 30` (манифест открытых файлов) и пустой `tool_blind_kinds`; `diff_reader_vs_gate`
 пуст в обоих модельных прогонов. A6 открыта и отложена: модулей уровня конфигурации в `cfg` нет,
-поэтому закрыть её на этом корпусе нельзя; отдельно не закрыты дескрипторы `Commands/<Имя>.xml`
-(их читатель не открывает), одиночные дескрипторы `Forms/<Имя>.xml` и `Templates/<Имя>.xml` без
-каталога (в манифест не попадают) и нечитаемый `Roles/<Имя>/Ext/Rights.xml` (даёт непройденное
-исключение разбора XML вместо записи диагноза).
+поэтому закрыть её на этом корпусе нельзя. Остаток блока A закрыт итерацией 14 (статус ниже):
+файла `Commands/<Имя>.xml` в выгрузке нет (замер по 7 корпусам и 3 фикстурам — 0 таких файлов),
+командный модуль `Commands/<Имя>/Ext/CommandModule.bsl` читается как `command_module`, а декларации
+команд лежат inline в XML владельца (`<ChildObjects><Command>`).
+
+Статус блока A к итерации 14. Читатель `p1c` добрал остаток A: командные модули
+(`command_module`), дескрипторы и содержимое общих коллекций (`common_command`,
+`command_group`, `common_picture`, `common_template`, `common_form` и их содержимое),
+одиночные макеты `Templates/<Имя>.xml` без каталога (`report_template`), коллекции вне
+`COLLECTIONS_MAP` (`settings_storage`, `filter_criteria`) и ограждающий разбор XML — битый файл
+даёт запись `xml_diagnostics {"path","kind","error"}`, а не падение всего чтения. Замеры:
+пульсар — `common_command 47`, `command_group 7`, `common_picture 403`, `common_template 13`,
+`common_form 65`, `command_module 44`, `settings_storage 1`, `filter_criteria 1`; ssl — 3 одиночных
+макета; фикстура `p1c/examples/reader_gaps` закрывает все классы, единственный непрочитанный файл —
+`Configuration.xml` (`tests/test_manifest_gaps.py`). Формулировка прежней строки про
+`Commands/<Имя>.xml` исправлена: такого файла нет, декларации команд лежат в XML владельца.
 
 ## Блок B. Разломанные места: команды, которые падают или врут
 
