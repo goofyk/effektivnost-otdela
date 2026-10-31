@@ -1772,3 +1772,100 @@ PREDICTED (записаны до прогона, после прогона не 
   латиница стоит вплотную к кириллице внутри замеренного имени файла; имя придумано не было, и строка в
   этой задаче не менялась.
 - Коммит правки плана — отдельно от этого журнала: `b2daca5`.
+
+### Журнал итерации 14: Task 29 (командные модули читаются как `command_module`, экспорты команды прикрепляются)
+
+- План итерации 14 написан тремя файлами в `docs/superpowers/plans/` (14a — задачи 29–33,
+  14b — 34–38, 14c — 39–42); все три прошли скан `<tmp>\opencode\scan_texts.py` без флагов.
+  Способ исполнения — inline (выбор пользователя). Ruling: лиджер — установленный
+  `effektivnost-otdela/.superpowers/sdd/effektivnost-otdela/progress.md` (не generic-воркспейс
+  `executing-plans`), нумерация продолжается с Task 29; репозиторий `p1c` — на ветке `main`
+  (так же, как в итерациях 1–13), контур `effektivnost-otdela` — на `feat/config-effektivnost`.
+- Замер до правки (`<tmp>\opencode\t29_owner.py`, `t29_pulsar_layout.txt`): файла
+  `Commands/<Имя>.xml` нет ни в одном из 7 корпусов и 3 фикстур (0 дескрипторов); декларации
+  команд лежат inline в `<ChildObjects><Command>` XML владельца (пульсар: 457 файлов, 2432
+  декларации, у 26 из 44 владельцев), а командный модуль — `Commands/<Имя>/Ext/CommandModule.bsl`
+  (пульсар: 44 объектных + 47 у CommonCommands). Формулировку роадмапа про `Commands/<Имя>.xml`
+  правит Task 33.
+- RED: `tests/load/test_commands.py` (новый) падал на 3 проверках — нет пары `command_module`,
+  нет поля `exports`; пины `tests/load/test_read_manifest.py:93-97` перевёрнуты из негативных
+  в позитивные. GREEN: читатель добавляет командный модуль в `module_jobs` с ключом
+  `("команда", rel(module))` и классом `KIND_COMMAND_MODULE = "command_module"`, в фазе 3
+  прикрепляет `exports` к записи команды.
+- Полный прогон `p1c`: `python scripts/run_tests.py` — тестов 80, неудачно 0 (было 79, +1 новый).
+- Офлайн-замер пульсара (`<tmp>\opencode\t29_pulsar_measure.py`): `command_module` 44 (ровно
+  объектных командных модуля), `common_command_module` 0 (до Task 30), CommonCommands `.bsl`
+  в манифесте 0.
+- Коммит `p1c`: `45933b7` (reader.py, test_read_manifest.py, test_commands.py).
+
+### Журнал итерации 14: Task 30 (дескрипторы и содержимое общих коллекций)
+
+- RED: `tests/load/test_common_collections.py` (новый, синтетическая фикстура через `tempfile` —
+  `Configuration.xml` + `CommonCommands/К1[.xml,/Ext/CommandModule.bsl]`, `CommandGroups/Г1.xml`,
+  `CommonPictures/П1[.xml,/Ext/Picture.xml,/Ext/Picture/Picture.png]`,
+  `CommonTemplates/Т1[.xml,/Ext/Template.xml]`, `CommonForms/Ф1[.xml,/Ext/Form.xml,/Ext/Form/Module.bsl,/Ext/Help.xml]`).
+  Падал на 16 проверках: не было классов дескрипторов, классов содержимого и ключей модели.
+- GREEN: читатель читает дескрипторы `CommonCommands/CommandGroups/CommonPictures/CommonTemplates`
+  и дескрипторы общих форм с классами раскладки `common_command`, `command_group`, `common_picture`,
+  `common_template`, `common_form`; содержимое — `common_command_module`, `common_picture_data`,
+  `common_picture_content`, `common_template_data`, `help` (справка общих форм). Ключи модели —
+  `common_commands`, `command_groups`, `common_pictures`, `common_templates`, `common_form_descriptors`
+  (общий помощник `_descriptor` + пять парсеров). Модуль общей команды — в `module_jobs` с ключом
+  `("общая команда", имя)` и классом `common_command_module`; экспорты прикрепляются в фазе 3.
+- Ruling: дескриптор общих форм идёт в отдельный ключ `common_form_descriptors` (параллель
+  `form_descriptors`), а не в `common_forms` (который остаётся списком записей содержимого форм) —
+  так класс `common_form` (дескриптор) не смешивается с `form_data`/`form_module` (содержимое).
+- Полный прогон `p1c`: `python scripts/run_tests.py` — тестов 81, неудачно 0 (+1 новый).
+- Офлайн-замер пульсара (`<tmp>\opencode\t30_pulsar_measure.py`): `common_command 47`,
+  `command_group 7`, `common_picture 403`, `common_template 13`, `common_form 65`,
+  `common_command_module 47`, `common_picture_data 403`, `common_picture_content 403`,
+  `common_template_data 16`, `help 82` — все совпали; `read_files` вырос 2979 → 4465.
+- Коммит `p1c`: `8d6004b` (reader.py, test_common_collections.py).
+
+### Журнал итерации 14: Task 31 (одиночные макеты и коллекции вне COLLECTIONS_MAP)
+
+- RED: `tests/load/test_single_templates_storages.py` (новый) падал на 10 проверках — не было
+  одиночного макета `report_template`, дескрипторов `settings_storage`/`filter_criteria` и
+  содержимого хранилища.
+- GREEN: одиночный дескриптор `Templates/<Имя>.xml` без каталога читается как `report_template`;
+  `SettingsStorages/<Имя>.xml` → `settings_storage` (+ содержимое: `Ext/ManagerModule.bsl` →
+  `object_module`, формы → `form_descriptor`/`form_data`/`form_module`, справка → `help`);
+  `FilterCriteria/<Имя>.xml` → `filter_criteria` (+ тип через `_parse_type`). Ключи модели —
+  `settings_storages`, `filter_criteria`; формы хранилища идут в `form_descriptors`/`common_forms`.
+- Офлайн-замер (`<tmp>\opencode\t31_measure.py`): пульсар — `settings_storage 1`,
+  `filter_criteria 1`, `form_descriptor 455` (= 442 объектов + 13 форм хранилища),
+  `help 98` (= 82 общих форм + 16 хранилища); ssl — 3 одиночных макета названы `report_template`.
+
+### Журнал итерации 14: Task 32 (ограждающий разбор XML — диагноз вместо падения)
+
+- RED (проверен честно через `git stash`): на читателе до правки битый `Roles/Р/Ext/Rights.xml`
+  давал необработанный `ParseError` в `parse_rights_xml:614`; тест это ловит.
+- GREEN: обёртка `_read(path, kind, fn, *args)` (внутри `load_configuration_model`) — при
+  `ET.ParseError` пишет `model["xml_diagnostics"]` записью `{"path","kind","error"}` и возвращает
+  None, а манифест (`_opened`) создаётся только при успехе. Все точки `ET.parse` (было 11, после
+  Task 29–31 стало 18) обёрнуты; поведение `skipped_files` и `load/scan.py` не менялось.
+- Полный прогон `p1c`: `python scripts/run_tests.py` — тестов 83, неудачно 0 (+2 новых: 82 → 83).
+- Ruling: правки reader.py задач 31 и 32 переплетены (Task 32 оборачивает точки разбора, которые
+  добавил Task 31), поэтому они закоммичены одним коммитом `76680e1` (reader.py + два теста), а
+  не двумя. Цена — слегка грубее `git bisect`; для репозитория без удалённой копии это приемлемо.
+
+### Журнал итерации 14: Task 33 (паритет манифеста и раскладки, фикстура, evidence)
+
+- Фикстура `p1c/examples/reader_gaps` (27 файлов) собрана генератором `<tmp>\opencode\gen_reader_gaps.py`
+  и закоммичена в `p1c` (`5f0b7ea`): каталог с модулями и командой, общие коллекции, хранилище настроек,
+  критерий отбора, одиночный макет, язык/подсистема/роль. Единственный непрочитанный файл —
+  `Configuration.xml` (замер: `disk - manifest == {"Configuration.xml"}`).
+- RED: `tests/test_manifest_gaps.py` (контур, новый) — до фикстуры и измерителя падал бы на отсутствии
+  фикстуры; после фикстуры три теста зелёные (покрытие путей, `gaps() == {}`, новые классы по 1).
+- Измеритель `scripts/manifest_gaps.py` закреплён (`GAP_KINDS` переименованы к фактическим классам
+  манифеста: `common_command`, `command_group`, `common_picture`, `common_template`, `common_form`,
+  `form_data` и т.д.) и закоммичен вместе с тестом (`5a8b15e`).
+- Замер паритета на фикстуре: расхождения только (1) `object_module` 6 против 4 — layout.py считает
+  командные модули в `Ext/*.bsl` (`scripts/layout.py:113`), известный квирк независимой линейки, его
+  не менять; (2) классы содержимого (`common_command_module`, `common_picture_data`,
+  `common_picture_content`, `common_template_data`, `help`) — их layout.py не считает, они только в
+  манифесте; (3) `files` 27 против 26 — ровно `Configuration.xml`. Дескрипторы совпадают.
+- Документы: `docs/план-оптимизации-p1c.md` — исправлена формулировка про `Commands/<Имя>.xml`
+  (такого файла нет) и добавлен «Статус блока A к итерации 14»; `docs/evidence/tool-coverage.md` —
+  статус итерации 14. Коммит `7274fd9`. Скан текстов: флаги только на прежних строках (цитаты имён
+  корпуса), новые абзацы чистые.
