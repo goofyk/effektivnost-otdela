@@ -47,6 +47,8 @@ KIND_FOLDERS = {
     "SettingsStorages": "settings_storage",
     "SubsystemGroups": "subsystem_group",
     "Subsystems": "subsystem",
+    "StyleItems": "style_item",
+    "Styles": "style",
     "Tasks": "task",
     "WebServices": "web_service",
     "AccumulationRegisters": "accumulation_register",
@@ -113,6 +115,21 @@ def layout_counts(cfg_dir, ignore: tuple = ()) -> dict:
     object_modules = [p for p in base.rglob("Ext/*.bsl")]
     bsl = [p for p in base.rglob("*.bsl")]
 
+    # Классы содержимого, у которых нет отдельной папки-папки: величина задаётся отдельной
+    # чертой по образцу `form_data`, `report_template_data`, `role_rights` и `predefined_data`.
+    # Имена папок и файлов взяты из дампа фикстуры `p1c/examples/reader_gaps` (мера
+    # `t17_layout_counts.py`), а не из манифеста наугад: черта обязана описывать раскладку,
+    # которую платформа действительно делает. Ожидание — в `tests/test_layout_counts.py`
+    # (оно записано до этой правки).
+    common_command_modules = list(base.rglob("CommonCommands/*/Ext/CommandModule.bsl"))
+    picture_data = list(base.rglob("CommonPictures/*/Ext/Picture.xml"))
+    picture_content = [p for p in base.rglob("CommonPictures/*/Ext/Picture/**") if p.is_file()]
+    common_template_contents = [p for p in base.rglob("CommonTemplates/*/Ext/*") if p.is_file()]
+    style_contents = [p for p in base.rglob("Styles/*/Ext/*") if p.is_file()]
+    style_item_contents = [p for p in base.rglob("StyleItems/*/Ext/*") if p.is_file()]
+    help_pages = (list(base.rglob("*/Ext/Help.xml")) +
+                  [p for p in base.rglob("*/Ext/Help/**") if p.is_file()])
+
     counts["form_descriptor"] = len(forms)
     counts["form_data"] = len(form_data)
     counts["form_module"] = len(form_modules)
@@ -124,6 +141,13 @@ def layout_counts(cfg_dir, ignore: tuple = ()) -> dict:
     counts["predefined_data"] = len(predefined_data)
     counts["object_module"] = len(object_modules)
     counts["bsl_module"] = len(bsl)
+    counts["common_command_module"] = len(common_command_modules)
+    counts["common_picture_data"] = len(picture_data)
+    counts["common_picture_content"] = len(picture_content)
+    counts["common_template_data"] = len(common_template_contents)
+    counts["style_data"] = len(style_contents)
+    counts["style_item_data"] = len(style_item_contents)
+    counts["help"] = len(help_pages)
     counts["files"] = sum(1 for p in base.rglob("*")
                           if p.is_file() and p.relative_to(base).as_posix() not in skipped)
     return {kind: count for kind, count in sorted(counts.items()) if count}

@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import gate                                                      # noqa: E402
 import layout                                                    # noqa: E402
+import paths                                                     # noqa: E402
 
 SAMPLE = {
     "Configuration.xml": (
@@ -111,6 +112,73 @@ class LayoutCountTest(unittest.TestCase):
         expected = {"catalog": 1, "role": 2}
         diff = layout.compare_expected(layout.layout_counts(self.cfg), expected)
         self.assertEqual(diff["role"], (1, 2))
+
+
+# Ожидание записано ДО правки счётчика (мера Task 64: `t17_layout_counts.py` ->
+# `iter17_t17_layout.log`, снята 2026-11-16 по фикстуре `p1c/examples/reader_gaps`,
+# 35 файлов / 48 каталогов / 4 429 b; фикстура этим раундом не тронута).
+# Что обязано появиться: девять классов манифеста читателя, у которых величины счётчика
+# не было вовсе — `common_command_module`, `common_picture_content`, `common_picture_data`,
+# `common_template_data`, `help`, `style`, `style_data`, `style_item`, `style_item_data`.
+# Дескрипторы `StyleItems` и `Styles` ложатся в словарь папок; остальные семь — классы
+# содержимого, у которых своей папки нет, и они задаются отдельными чертежами.
+# Что не двинется: восемнадцать совпавших классов и две величины счётчика, которых манифест
+# фикстуры не называет (`bsl_module` 8 и `files` 35). Расхождение `object_module` (счётчик 6
+# против манифеста 4) — свойство чертежа `Ext/*.bsl` и остаётся названным.
+# Нулевые величины: счётчик печатает только ненулевые, поэтому класс без файлов на диске
+# обязан отсутствовать в словаре, а не выглядеть нулём — на фикстуре таких четырёх классов
+# манифеста нет, но четыре GAP-класса без файлов (`command_descriptor`, `form_descriptor`,
+# `report_template_data`, `common_attribute`) отсутствуют в счётчике именно так.
+FIXTURE_KINDS_AFTER = {
+    "bsl_module": 8, "catalog": 1, "command_group": 1, "command_module": 1,
+    "common_command": 1, "common_command_module": 1, "common_form": 1, "common_module": 1,
+    "common_picture": 1, "common_picture_content": 1, "common_picture_data": 1,
+    "common_template": 1, "common_template_data": 1, "files": 35, "filter_criteria": 1,
+    "form_data": 3, "form_module": 2, "help": 1, "language": 1, "object_module": 6,
+    "report_template": 1, "role": 1, "role_rights": 1, "settings_storage": 1, "style": 1,
+    "style_data": 1, "style_item": 2, "style_item_data": 1, "subsystem": 1,
+}
+FIXTURE_KINDS_ADDED = ("common_command_module", "common_picture_content", "common_picture_data",
+                       "common_template_data", "help", "style", "style_data", "style_item",
+                       "style_item_data")
+
+
+class FixtureLayoutExpectationTest(unittest.TestCase):
+    """Ожидание счётчика по фикстуре `p1c/examples/reader_gaps` — спецификация до правки.
+
+    Фикстура выбрана потому, что на ней манифест читателя уже называет все девять классов,
+    у которых у счётчика не было величины: сверка двух независимых раскладок на ней мерима
+    без добавления файлов. Ожидание записано до правки `scripts/layout.py` и не подгоняется
+    под неё: после правки проверяется весь словарь целиком, а не только добавленные классы.
+    """
+
+    def _fixture(self):
+        local = ROOT / "local.paths.json"
+        src = paths.load_local(local).get("p1c") if local.is_file() else None
+        if not src:
+            self.skipTest("нет пути читателя (local.paths.json)")
+        base = pathlib.Path(src).parent / "examples" / "reader_gaps"
+        if not base.is_dir():
+            self.skipTest("фикстуры reader_gaps нет")
+        return base
+
+    def test_fixture_counter_names_every_manifest_class(self):
+        base = self._fixture()
+        counts = layout.layout_counts(base)
+        self.assertEqual(layout.compare_expected(counts, FIXTURE_KINDS_AFTER), {}, counts)
+        self.assertEqual(len(counts), len(FIXTURE_KINDS_AFTER))
+        missing = [kind for kind in FIXTURE_KINDS_ADDED if kind not in counts]
+        self.assertEqual(missing, [], counts)
+
+    def test_descriptor_folders_of_the_fixture_are_named_by_the_folder_dict(self):
+        """`StyleItems` (3 файла на диске: 2 дескриптора плюс `Ext/StyleItem.xml`) и `Styles`
+        (2 файла: 1 дескриптор плюс `Ext/Style.xml`) входят в словарь папок, и по ним
+        считаются ровно дескрипторы: 2 и 1."""
+        self.assertEqual(layout.KIND_FOLDERS.get("StyleItems"), "style_item")
+        self.assertEqual(layout.KIND_FOLDERS.get("Styles"), "style")
+        base = self._fixture()
+        self.assertEqual(len(layout._object_files(base, base / "StyleItems")), 2)
+        self.assertEqual(len(layout._object_files(base, base / "Styles")), 1)
 
 
 class GateLayoutTest(unittest.TestCase):
