@@ -2991,6 +2991,9 @@ sha256 `2139fba5…49aa15`, побайтово равна фикстуре за�
 запускалась. Прогон 5 903,9 с (98 мин 24 с), `rc = 1` (находки есть).
 
 **Лестница UH начинается этим замером**; абсолюты к другим корпусам не приводятся — только доли.
+Предсказание по общему числу (интервал 40 000…55 000) промахнулось: факт **57 864** (+2 864 к
+верхней границе); гейт отметил это как pred_total_in_interval=false — расхождение записано,
+предсказание не правилось.
 
 **Числа замера 98.**
 
@@ -3011,21 +3014,21 @@ sha256 `2139fba5…49aa15`, побайтово равна фикстуре за�
 | код | UH | формная | UH % | LSO % |
 |---|---:|---:|---:|---:|
 | IDS_STX_METHODNOTFOUND | 38 817 | 17 369 | 67,1 | 71,8 |
-| IDS_STX_PROPERTYNOTFOUND | 6 209 | 5 942 | 10,7 | 6,7 |
-| IDS_STX_VAR_NOTDECLARED | 4 560 | 1 589 | 7,9 | 7,6 |
-| IDS_STX_CTOR_NOTFOUND | 2 965 | 514 | 5,1 | 7,6 |
-| IDS_STX_TYPE_NOTDEFINED | 1 751 | 143 | 3,0 | 2,3 |
-| BSL_CTX_CLIENT_ONLY | 1 420 | 1 420 | 2,5 | 0,2 |
-| BSL_CTX_NOT_AVAILABLE | 872 | 662 | 1,5 | 0,4 |
-| IDS_STX_PROC_NOTDEFINED | 516 | 20 | 0,9 | 2,2 |
-| IDS_STX_PARAMS_TOOMANY | 355 | 127 | 0,6 | 0,6 |
-| IDS_STX_PROC_DEFINED | 206 | 63 | 0,4 | 0,3 |
-| IDS_STX_PARAMS_NOTENOUGH | 145 | 44 | 0,3 | 0,3 |
-| IDS_STX_EXP_PREPROCESSORIDENT | 30 | 4 | 0,1 | 0,0 |
-| BSL_DIR_MULTIPLE | 12 | 1 | 0,0 | 0,0 |
-| IDS_STX_BAD_NUMCONST | 3 | 1 | 0,0 | 0,0 |
+| IDS_STX_PROPERTYNOTFOUND | 6 209 | 3 703 | 10,7 | 6,7 |
+| IDS_STX_VAR_NOTDECLARED | 4 560 | 1 590 | 7,9 | 7,6 |
+| IDS_STX_CTOR_NOTFOUND | 2 965 | 630 | 5,1 | 7,6 |
+| IDS_STX_TYPE_NOTDEFINED | 1 751 | 572 | 3,0 | 2,3 |
+| BSL_CTX_CLIENT_ONLY | 1 420 | 1 396 | 2,5 | 0,2 |
+| BSL_CTX_NOT_AVAILABLE | 872 | 851 | 1,5 | 0,4 |
+| IDS_STX_PROC_NOTDEFINED | 516 | 1 | 0,9 | 2,2 |
+| IDS_STX_PARAMS_TOOMANY | 355 | 107 | 0,6 | 0,6 |
+| IDS_STX_PROC_DEFINED | 206 | 176 | 0,4 | 0,3 |
+| IDS_STX_PARAMS_NOTENOUGH | 145 | 52 | 0,3 | 0,3 |
+| IDS_STX_EXP_PREPROCESSORIDENT | 30 | 0 | 0,1 | 0,0 |
+| BSL_DIR_MULTIPLE | 12 | 0 | 0,0 | 0,0 |
+| IDS_STX_BAD_NUMCONST | 3 | 0 | 0,0 | 0,0 |
 | IDS_PREPROCESSOR_SHOULD_NOT_INTERSECT | 2 | 0 | 0,0 | 0,0 |
-| BSL_QUAL_PARAM_TYPE | 1 | 1 | 0,0 | 0,0 |
+| BSL_QUAL_PARAM_TYPE | 1 | 0 | 0,0 | 0,0 |
 
 Три кода впервые на UH (`IDS_STX_EXP_PREPROCESSORIDENT` 30, `IDS_STX_BAD_NUMCONST` 3,
 `IDS_PREPROCESSOR_SHOULD_NOT_INTERSECT` 2) — 0,06 %, не систематический пробел.
