@@ -3101,13 +3101,13 @@ XDTO-пакета, 4,3× SSL). Код, шаблоны, модель и фикс�
 | IDS_STX_PROC_NOTDEFINED | 1 531 | 23 | 2,0 | 0,9 |
 | BSL_CTX_CLIENT_ONLY | 1 242 | 1 242 | 1,6 | 2,5 |
 | IDS_STX_EXP_PREPROCESSORIDENT | 811 | 0 | 1,0 | 0,1 |
-| BSL_CTX_NOT_AVAILABLE | 662 | 411 | 0,8 | 1,5 |
+| BSL_CTX_NOT_AVAILABLE | 662 | 643 | 0,8 | 1,5 |
 | IDS_STX_PARAMS_TOOMANY | 321 | 87 | 0,4 | 0,6 |
-| IDS_STX_PROC_DEFINED | 301 | 176 | 0,4 | 0,4 |
-| IDS_STX_PARAMS_NOTENOUGH | 211 | 67 | 0,3 | 0,3 |
-| BSL_DIR_MULTIPLE | 15 | 2 | 0,0 | 0,0 |
-| IDS_STX_VAR_DEFINED | 5 | 0 | 0,0 | 0,0 |
-| IDS_STX_BAD_NUMCONST | 3 | 1 | 0,0 | 0,0 |
+| IDS_STX_PROC_DEFINED | 301 | 253 | 0,4 | 0,4 |
+| IDS_STX_PARAMS_NOTENOUGH | 211 | 59 | 0,3 | 0,3 |
+| BSL_DIR_MULTIPLE | 15 | 14 | 0,0 | 0,0 |
+| IDS_STX_VAR_DEFINED | 5 | 5 | 0,0 | 0,0 |
+| IDS_STX_BAD_NUMCONST | 3 | 0 | 0,0 | 0,0 |
 | IDS_PREPROCESSOR_SHOULD_NOT_INTERSECT | 2 | 0 | 0,0 | 0,0 |
 | BSL_QUAL_PARAM_TYPE | 1 | 0 | 0,0 | 0,0 |
 
@@ -3120,7 +3120,7 @@ XDTO-пакета, 4,3× SSL). Код, шаблоны, модель и фикс�
 | CTOR от всех | 4,4 % | 5,1 % | 7,6 % | 12,3 % | 7,0 % |
 | доля формной строки | 45,5 % | 45,7 % | 20,0 % | 18,8 % | 21,5 % |
 | домен XDTO (от METHOD) | **3,9 %** | 3,6 % | 26,2 % | 12,9 % | 4,6 % |
-| F88 `Форма.*` (от METHOD) | **8,1 %** | 8,2 % | 0,8 % | 1,2 % | 0,8 % |
+| F88 `Форма.*` (от METHOD) | **8,1 %** | 8,2 % | 0,9 % | 1,2 % | 0,8 % |
 
 **До пяти расхождений.**
 
